@@ -1,0 +1,61 @@
+name: Windows Kurulum Dosyası Derle ve Yayınla
+
+# Yeni bir sürüm etiketi (ör. v3.0.1) oluşturulduğunda Windows kurulum dosyasını derler ve
+# GitHub Releases'e yükler. Kurulu programlar güncellemeyi buradan otomatik indirir.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Kodu al
+        uses: actions/checkout@v4
+
+      - name: Node.js kur
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Depo adını ve sürüm numarasını ayarla
+        shell: bash
+        run: |
+          node -e "
+            const fs = require('fs');
+            const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
+            p.build.publish[0].owner = owner;
+            p.build.publish[0].repo = repo;
+            const ref = process.env.GITHUB_REF || '';
+            if (ref.startsWith('refs/tags/v')) {
+              let v = ref.slice('refs/tags/v'.length);
+              if (/^\d+\.\d+$/.test(v)) v += '.0';
+              if (!/^\d+\.\d+\.\d+$/.test(v)) {
+                console.error('Sürüm etiketi anlaşılamadı: ' + ref + ' — v3.0.1 gibi üç sayılı bir etiket kullanın.');
+                process.exit(1);
+              }
+              p.version = v;
+            }
+            fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
+            console.log('Yayın yeri:', owner + '/' + repo, '- sürüm:', p.version);
+          "
+
+      - name: Bağımlılıkları kur
+        run: npm install
+
+      # Testler bir sorun bulursa uyarı verir; kurulum dosyası yine de derlenir.
+      - name: Testleri çalıştır
+        run: npm test
+        continue-on-error: true
+
+      - name: Windows kurulum dosyasını derle ve GitHub Release'e yayınla
+        run: npx electron-builder --win --x64 --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
