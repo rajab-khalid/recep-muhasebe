@@ -67,7 +67,7 @@ GitHub'ın sayfası bir seferde en fazla 100 dosya kabul ediyor, bu proje 109 do
 ## Adım 4 — İlk sürümü yayınlayın (v3.0.0)
 
 1. Depo sayfasında sağdaki **Releases** → **Draft a new release** (veya **Create a new release**).
-2. **Choose a tag** kutusuna `v3.0.0` yazın → **Create new tag: v3.0.0 on publish**.
+2. **Choose a tag** kutusuna küçük harfle `v3.0.0` yazın → **Create new tag: v3.0.0 on publish**.
 3. Başlık: `Recep Muhasebe 3.0.0` → **Publish release**.
 4. Üstteki **Actions** sekmesinde "Windows Kurulum Dosyası Derle ve Yayınla" çalışmaya başlar (sarı daire). 5–10 dakika sonra yeşil tik olur.
 

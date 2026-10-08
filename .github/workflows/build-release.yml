@@ -7,6 +7,7 @@ on:
   push:
     tags:
       - 'v*'
+      - 'V*'
   workflow_dispatch: {}
 
 permissions:
@@ -34,14 +35,17 @@ jobs:
             p.build.publish[0].owner = owner;
             p.build.publish[0].repo = repo;
             const ref = process.env.GITHUB_REF || '';
-            if (ref.startsWith('refs/tags/v')) {
-              let v = ref.slice('refs/tags/v'.length);
+            const m = /^refs\/tags\/([vV])(.*)$/.exec(ref);
+            if (m) {
+              let v = m[2];
               if (/^\d+\.\d+$/.test(v)) v += '.0';
               if (!/^\d+\.\d+\.\d+$/.test(v)) {
                 console.error('Sürüm etiketi anlaşılamadı: ' + ref + ' — v3.0.1 gibi üç sayılı bir etiket kullanın.');
                 process.exit(1);
               }
               p.version = v;
+              // kurulum dosyası, etiket büyük V ile yazılmış olsa da aynı sürüm sayfasına eklenir
+              p.build.publish[0].tagNamePrefix = m[1];
             }
             fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
             console.log('Yayın yeri:', owner + '/' + repo, '- sürüm:', p.version);
