@@ -1,0 +1,9 @@
+{
+  "name": "Recep Muhasebe",
+  "short_name": "Recep",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#1C2127",
+  "theme_color": "#1C2127",
+  "icons": [{ "src": "img/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

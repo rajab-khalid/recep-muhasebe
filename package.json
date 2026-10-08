@@ -1,0 +1,70 @@
+{
+  "name": "recep-muhasebe",
+  "productName": "Recep Muhasebe",
+  "version": "3.0.0",
+  "description": "Recep Muhasebe — Şêrwan için muhasebe, stok, hızlı satış ve servis programı",
+  "main": "main.js",
+  "author": "Şêrwan Car Detailing",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "server": "node server/index.js --data ./data",
+    "test": "node --test test/core.test.js test/import.test.js test/olddata.test.js test/rules.test.js",
+    "dist": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.sherwan.recepmuhasebe",
+    "productName": "Recep Muhasebe",
+    "copyright": "Şêrwan Car Detailing",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "desktop/**/*",
+      "server/**/*",
+      "ui/**/*"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Recep Muhasebe",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "GITHUB_KULLANICI_ADINIZ",
+        "repo": "recep-muhasebe",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "electron": "44.6.0",
+    "electron-builder": "^26.15.3"
+  }
+}
