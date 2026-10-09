@@ -255,6 +255,20 @@ html[dir="rtl"] .select { background-position: left 9px center; }
 .combo-item.on, .combo-item:hover { background: var(--info-soft); }
 .combo-item .sub { font-size: 12px; color: var(--ink-3); }
 .combo-empty { padding: 10px; color: var(--ink-3); font-size: 13px; }
+.combo-head { padding: 6px 10px 3px; font-size: 12px; color: var(--ink-3); }
+.combo-more {
+  display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 4px; padding: 9px 10px; border: 0; border-top: 1px solid var(--line);
+  background: var(--surface); color: var(--info); font: inherit; font-size: 13px; text-align: start; cursor: pointer; border-radius: 0 0 6px 6px;
+  position: sticky; bottom: -4px; z-index: 1; /* stays in view at the bottom of a long list */
+}
+.combo-more:hover { background: var(--info-soft); }
+
+/* product list for documents (several products at once) */
+.picker-cats { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
+.picker-list { max-height: min(54vh, 560px); border: 1px solid var(--line); border-radius: var(--radius); }
+.picker-list .tbl tbody tr.kb:not(.selected) td { background: #F4F7FA; }
+.picker-list input[type="checkbox"] { width: 16px; height: 16px; margin: 0; cursor: pointer; accent-color: var(--graphite); vertical-align: middle; }
+.picker-list .num-input { width: 100px; margin-inline-start: auto; }
 
 /* ============================================================== panels, cards, tables */
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); }
@@ -339,6 +353,7 @@ table.tbl { width: 100%; border-collapse: separate; border-spacing: 0; font-size
 .modal.wide { max-width: 860px; }
 .modal.xwide { max-width: 1180px; }
 .modal.full { max-width: 96vw; height: 92vh; max-height: none; }
+.modal:focus, .drawer:focus { outline: none; }
 .modal-head { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
 .modal-head h3 { font-size: 16px; font-weight: 600; }
 .modal-head .icon-btn { margin-inline-start: auto; }

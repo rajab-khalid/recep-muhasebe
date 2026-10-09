@@ -269,8 +269,34 @@ export function openModal(Comp, props = {}) {
   });
 }
 
+/**
+ * Keyboard focus moves into a dialog when it opens and goes back to where it was when it closes.
+ * (The browser's own autofocus works only once per page; without this, Enter would press the button
+ * behind the dialog again and typing would go nowhere.)
+ */
+function useDialogFocus(ref) {
+  useEffect(() => {
+    const box = ref.current;
+    if (!box) return undefined;
+    const prev = document.activeElement;
+    const tm = setTimeout(() => {
+      if (box.contains(document.activeElement)) return;
+      const target = box.querySelector('[autofocus]') || box;
+      try { target.focus({ preventScroll: true }); } catch (e) { /* */ }
+    }, 0);
+    return () => {
+      clearTimeout(tm);
+      if (prev && prev !== document.body && typeof prev.focus === 'function' && document.contains(prev)) {
+        try { prev.focus({ preventScroll: true }); } catch (e) { /* */ }
+      }
+    };
+  }, []);
+}
+
 /** Standard modal frame */
 export function Modal({ title, close, children, foot, size = '', icon, onSubmit, left }) {
+  const box = useRef(null);
+  useDialogFocus(box);
   const body = html`<div class="modal-body">${children}</div>`;
   const inner = html`
     <div class="modal-head">${icon && html`<${Icon} name=${icon} />`}<h3>${title}</h3><${IconBtn} icon="x" title=${t('common.close')} onClick=${() => close()} /></div>
@@ -279,14 +305,16 @@ export function Modal({ title, close, children, foot, size = '', icon, onSubmit,
   return html`<div class="overlay" onMouseDown=${(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.down = '1'; }}
       onMouseUp=${(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.down === '1') close(); e.currentTarget.dataset.down = ''; }}>
     ${onSubmit
-      ? html`<form class=${`modal ${size}`} role="dialog" aria-modal="true" onSubmit=${(e) => { e.preventDefault(); onSubmit(); }}>${inner}</form>`
-      : html`<div class=${`modal ${size}`} role="dialog" aria-modal="true">${inner}</div>`}
+      ? html`<form ref=${box} tabindex="-1" class=${`modal ${size}`} role="dialog" aria-modal="true" onSubmit=${(e) => { e.preventDefault(); onSubmit(); }}>${inner}</form>`
+      : html`<div ref=${box} tabindex="-1" class=${`modal ${size}`} role="dialog" aria-modal="true">${inner}</div>`}
   </div>`;
 }
 
 export function Drawer({ title, close, children, foot, narrow, tools }) {
+  const box = useRef(null);
+  useDialogFocus(box);
   return html`<div><div class="drawer-overlay" onClick=${() => close()}></div>
-    <aside class=${`drawer ${narrow ? 'narrow' : ''}`} role="dialog" aria-modal="true">
+    <aside ref=${box} tabindex="-1" class=${`drawer ${narrow ? 'narrow' : ''}`} role="dialog" aria-modal="true">
       <div class="modal-head"><h3>${title}</h3>${tools && html`<div class="row" style="margin-inline-start:auto">${tools}</div>`}<${IconBtn} icon="x" title=${t('common.close')} onClick=${() => close()} cls=${tools ? '' : ''} /></div>
       <div class="modal-body">${children}</div>
       ${foot && html`<div class="modal-foot">${foot}</div>`}

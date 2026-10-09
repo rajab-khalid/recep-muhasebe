@@ -561,4 +561,8 @@ export default {
   'audit.msg.paused_sec': 'Şîfre an PIN çewt · {n} çirke hate rawestandin', 'audit.msg.paused_min': 'Şîfre an PIN çewt · {n} deqîqe hate rawestandin', 'audit.msg.user_unlocked': '{name}: kilîta têketinê vebû',
   'audit.msg.secret_reset': '{name}: PIN/şîfre bi pelê SIFRE-SIFIRLA hate rakirin', 'login.forgot': 'PIN-a te ji bîr çû?', 'login.forgot_text': 'Rêvebir PIN-ên karmendan ji rûpela Bikarhêner nû dike. Eger PIN-a rêvebir bi xwe ji bîr çûbe: bernameyê bigire, di peldanka agahiyan de (li Windows: %APPDATA%\\Recep Muhasebe\\data) pelekî vala bi navê SIFRE-SIFIRLA deyne û bernameyê dîsa veke. Rêvebir ji vê komputerê bê PIN dikeve û PIN-eke nû datîne.',
   'err.password_too_long': 'Şîfre pir dirêj e (herî zêde 200 tîp).',
+  'picker.open': 'Lîsteya materyalan', 'picker.title': 'Lîsteya materyalan', 'picker.all_list': 'Ji hemû materyalan çendan hilbijêre',
+  'picker.in_stock': 'Tenê yên di embarê de', 'picker.selected_tab': 'Hilbijartî ({n})', 'picker.select_all': 'Hemûyên di lîsteyê de hilbijêre',
+  'picker.selected_n': '{n} materyal hatin hilbijartin', 'picker.hint': 'Ji bo hilbijartinê li ser materyalan bitikîne; hejmarê li ser her rêzê biguherîne.', 'picker.add_n': 'Yên hilbijartî zêde bike ({n})',
+  'picker.added_n': '{n} materyal hatin zêdekirin', 'picker.more': '{n} materyalên din hene; lêgerînê teng bike an kategoriyekê hilbijêre.', 'picker.keys': 'Klavye: bi ↑ ↓ bigere, bi Enter hilbijêre, bi Ctrl+Enter zêde bike.',
 };

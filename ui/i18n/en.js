@@ -561,4 +561,8 @@ export default {
   'audit.msg.paused_sec': 'Wrong password or PIN · paused for {n, plural, one {# second} other {# seconds}}', 'audit.msg.paused_min': 'Wrong password or PIN · paused for {n, plural, one {# minute} other {# minutes}}', 'audit.msg.user_unlocked': '{name}: sign-in unlocked',
   'audit.msg.secret_reset': '{name}: PIN/password removed with the SIFRE-SIFIRLA file', 'login.forgot': 'Forgot your PIN?', 'login.forgot_text': 'An admin renews staff PINs on the Users page. If the admin\'s own PIN is forgotten: close the program, put an empty file named SIFRE-SIFIRLA into the data folder (on Windows: %APPDATA%\\Recep Muhasebe\\data) and open the program again. The admin then signs in on this computer without a PIN and sets a new one.',
   'err.password_too_long': 'The password is too long (at most 200 characters).',
+  'picker.open': 'Product list', 'picker.title': 'Product list', 'picker.all_list': 'Pick several from all products',
+  'picker.in_stock': 'In stock only', 'picker.selected_tab': 'Selected ({n})', 'picker.select_all': 'Select everything in the list',
+  'picker.selected_n': '{n, plural, one {# product selected} other {# products selected}}', 'picker.hint': 'Click products to select them; change the quantity on each row.', 'picker.add_n': 'Add selected ({n})',
+  'picker.added_n': '{n, plural, one {# product added} other {# products added}}', 'picker.more': '{n, plural, one {# more product} other {# more products}} not shown; narrow the search or pick a category.', 'picker.keys': 'Keyboard: ↑ ↓ to move, Enter to select, Ctrl+Enter to add.',
 };

@@ -18,7 +18,7 @@ import { PayPill, StatusPill } from './dashboard.js';
 import { actorName } from './audit.js';
 import { PaymentDialog, PaymentDrawer } from './payments.js';
 import {
-  PartnerPicker, ProductSearch, VehiclePicker, AccountSelect, WarehouseSelect, CurrencySelect, StaffSelect, PriceListSelect,
+  PartnerPicker, ProductSearch, ProductPickerDialog, VehiclePicker, AccountSelect, WarehouseSelect, CurrencySelect, StaffSelect, PriceListSelect,
   defaultAccount, account, defaultWarehouseId, defaultPriceListId, activeWarehouses, loadPartner,
 } from './pickers.js';
 import { dn } from '../core/names.js';
@@ -485,12 +485,13 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
     return round(convert(base, p.currency, doc.currency, doc.usd_iqd), Math.max(decimals(doc.currency), 2));
   }
 
-  function addProductTo(doc, p) {
+  function addProductTo(doc, p, qty = 1) {
+    const n = Math.abs(Number(qty)) || 1;
     const existing = doc.lines.find((l) => l.product_id === p.id && !l.ref_line_id && l.kind !== 'text');
-    if (existing && doc.type !== 'adjust') { existing.qty = (Number(existing.qty) || 0) + 1; return; }
+    if (existing && doc.type !== 'adjust') { existing.qty = round((Number(existing.qty) || 0) + n, 3); return; }
     const negReason = doc.type === 'adjust' && ['damage', 'loss', 'gift', 'own_use'].includes(doc.reason);
     doc.lines.push({
-      key: newKey(), kind: p.type === 'service' ? 'service' : 'product', product_id: p.id, code: p.code, description: p.name, qty: negReason ? -1 : 1, unit: p.unit,
+      key: newKey(), kind: p.type === 'service' ? 'service' : 'product', product_id: p.id, code: p.code, description: p.name, qty: negReason ? -n : n, unit: p.unit,
       unit_price: ['transfer', 'adjust'].includes(doc.type) ? 0 : priceFor(doc, p), discount: 0, discount_pct: null, staff_id: '', track_stock: p.track_stock,
       unit_cost_usd: doc.type === 'adjust' && !negReason && p.cost_usd ? round(p.cost_usd, 4) : undefined,
     });
@@ -499,6 +500,22 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
   const addProduct = (p) => {
     setD((x) => { const doc = { ...x, lines: x.lines.map((l) => ({ ...l })) }; addProductTo(doc, p); return doc; });
     setDirty(true);
+  };
+  /** the product list: several products, each with its own quantity */
+  const openProductList = (text = '') => {
+    const purchase = isPurchaseSide(d.type);
+    const prices = !['transfer', 'adjust'].includes(d.type) && (!purchase || can('products.cost'));
+    openModal(ProductPickerDialog, {
+      q: text, priceListId: d.price_list_id, warehouseId: d.warehouse_id, type: ['transfer', 'adjust'].includes(d.type) ? 'product' : undefined,
+      currency: d.currency, showPrices: prices, priceOf: prices ? (p) => priceFor(d, p) : null,
+      priceLabel: purchase ? t('doc.unit_cost_price') : t('print.col.price'),
+    }).then((items) => {
+      if (!items || !items.length) return;
+      setD((x) => { const doc = { ...x, lines: x.lines.map((l) => ({ ...l })) }; for (const it of items) addProductTo(doc, it.product, it.qty); return doc; });
+      setDirty(true);
+      toast(t('picker.added_n', { n: items.length }));
+      setTimeout(() => searchRef.current && searchRef.current.focus(), 50);
+    });
   };
   const addFree = (kind) => {
     set((x) => ({ lines: [...x.lines, { key: newKey(), kind, product_id: null, code: '', description: '', qty: kind === 'text' ? 0 : 1, unit: '', unit_price: 0, discount: 0, discount_pct: null, staff_id: kind === 'labor' ? (x.technician_id || '') : '' }] }));
@@ -703,7 +720,9 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
       <div class="panel-body" style="padding-bottom:8px">
         <div class="row gap-8">
           <${ProductSearch} onPick=${addProduct} priceListId=${d.price_list_id} warehouseId=${d.warehouse_id} currency=${showPrices ? d.currency : null} usdIqd=${d.usd_iqd} inputRef=${searchRef}
-            type=${['transfer', 'adjust'].includes(type) ? 'product' : undefined} autoFocus=${!!d.partner && !d.lines.length} />
+            type=${['transfer', 'adjust'].includes(type) ? 'product' : undefined} autoFocus=${!!d.partner && !d.lines.length}
+            browse onMore=${openProductList} priceOf=${showPrices && (!isPurchaseSide(type) || showCost) ? (p) => priceFor(d, p) : undefined} />
+          <${Btn} icon="list-checks" onClick=${() => openProductList()} title=${t('picker.all_list')}>${t('picker.open')}</${Btn}>
         </div>
       </div>
       ${!d.lines.length ? html`<${Empty} icon="package-search" title=${t('doc.no_lines')} text=${t('doc.no_lines_hint')} />` : html`<div class="table-wrap"><table class="tbl lines-tbl">

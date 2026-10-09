@@ -561,4 +561,8 @@ export default {
   'audit.msg.paused_sec': 'Hatalı şifre veya PIN · {n} saniye bekletildi', 'audit.msg.paused_min': 'Hatalı şifre veya PIN · {n} dakika bekletildi', 'audit.msg.user_unlocked': '{name}: giriş kilidi açıldı',
   'audit.msg.secret_reset': '{name}: PIN/şifre, SIFRE-SIFIRLA dosyasıyla kaldırıldı', 'login.forgot': 'PIN\'imi unuttum', 'login.forgot_text': 'Çalışanların PIN\'ini yönetici Kullanıcılar sayfasından yeniler. Yöneticinin kendi PIN\'i unutulduysa: programı kapatın, veri klasörüne (Windows\'ta %APPDATA%\\Recep Muhasebe\\data) adı SIFRE-SIFIRLA olan boş bir dosya koyun ve programı yeniden açın. Yönetici bu bilgisayardan PIN\'siz girip yeni PIN belirler.',
   'err.password_too_long': 'Şifre çok uzun (en fazla 200 karakter).',
+  'picker.open': 'Ürün listesi', 'picker.title': 'Ürün listesi', 'picker.all_list': 'Tüm ürünlerden birkaçını seç',
+  'picker.in_stock': 'Yalnızca stokta olanlar', 'picker.selected_tab': 'Seçilenler ({n})', 'picker.select_all': 'Listedekilerin hepsini seç',
+  'picker.selected_n': '{n} ürün seçildi', 'picker.hint': 'Ürünlere tıklayarak seçin; miktarı satırında değiştirebilirsiniz.', 'picker.add_n': 'Seçilenleri ekle ({n})',
+  'picker.added_n': '{n} ürün eklendi', 'picker.more': '{n} ürün daha var; aramayı veya kategoriyi daraltın.', 'picker.keys': 'Klavye: ↑ ↓ ile gezin, Enter ile seçin, Ctrl+Enter ile ekleyin.',
 };
