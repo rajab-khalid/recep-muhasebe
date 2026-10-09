@@ -2,7 +2,7 @@
 import { html, useState, useEffect, useRef } from './core/h.js';
 import { t, onLang, setLang, LANGS, getLang } from './core/i18n.js';
 import { store, useStore, can, setPrefs, boot } from './core/store.js';
-import { useRoute, navigate } from './core/router.js';
+import { useRoute, navigate, back, canGoBack } from './core/router.js';
 import { api, ApiError } from './core/api.js';
 import { money, num, dateTime, initials, date as fdate, rateText } from './core/format.js';
 import {
@@ -184,9 +184,33 @@ function Sidebar({ route }) {
   </aside>`;
 }
 
+/** one screen back; with no earlier screen, the page above this one (e.g. the list a document belongs to) */
+function goBack() {
+  const crumbs = store.state.crumbs || [];
+  const parent = [...crumbs].reverse().find((c) => c.href);
+  back(parent ? parent.href.replace(/^#/, '') : '/');
+}
+
+/** Back button of the desktop program: Alt+← and the mouse's back button (a browser does this itself) */
+function useBackKeys() {
+  useEffect(() => {
+    if (!window.desktop) return undefined;
+    const onKey = (e) => {
+      if (e.altKey && !e.ctrlKey && !e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'BrowserBack')) { e.preventDefault(); goBack(); }
+    };
+    const onMouse = (e) => { if (e.button === 3) { e.preventDefault(); goBack(); } };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('mouseup', onMouse);
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('mouseup', onMouse); };
+  }, []);
+}
+
 function Topbar({ onMenu }) {
+  const route = useRoute();
   const title = useStore((s) => s.pageTitle);
   const crumbs = useStore((s) => s.crumbs);
+  useBackKeys();
+  const showBack = route.path !== '/' || canGoBack();
   const b = useStore((s) => s.boot);
   const u = useStore((s) => s.user);
   const dc = useStore((s) => s.displayCurrency);
@@ -197,6 +221,8 @@ function Topbar({ onMenu }) {
   const langItems = LANGS.map((l) => ({ label: `${l.code === getLang() ? '✓ ' : ''}${l.name}`, onClick: () => setLang(l.code) }));
   return html`<header class="topbar">
     <${IconBtn} icon="menu" title=${t('nav.menu')} onClick=${onMenu} cls="mobile-menu" />
+    ${showBack && html`<button type="button" class="back-btn" onClick=${goBack} title=${window.desktop ? `${t('common.back')} (Alt+←)` : t('common.back')} aria-label=${t('common.back')}>
+      <${Icon} name="arrow-left" size="sm" /><span>${t('common.back')}</span></button>`}
     <div class="title">
       ${crumbs && html`<div class="crumbs">${crumbs.map((c, i) => html`${i > 0 && html`<${Icon} name="chevron-right" size="sm" />`}${c.href ? html`<a href=${c.href}>${c.label}</a>` : html`<span>${c.label}</span>`}`)}</div>`}
       <h1 dir="auto">${title || ''}</h1>

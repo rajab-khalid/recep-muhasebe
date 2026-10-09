@@ -5,7 +5,7 @@ import { t } from '../core/i18n.js';
 import { api } from '../core/api.js';
 import { can, boot } from '../core/store.js';
 import { useTitle } from '../core/page.js';
-import { navigate, setQuery } from '../core/router.js';
+import { navigate, setQuery, back } from '../core/router.js';
 import { refreshBoot } from '../core/session.js';
 import { money, num, qty as fqty, convert, date as fdate, today, usdIqd, round, decimals, display, pct as fpct } from '../core/format.js';
 import {
@@ -67,9 +67,9 @@ export function Products({ query = {} }) {
       const pls = (boot().price_lists || []).filter((p) => p.active);
       downloadXlsx(`${t('nav.products')}-${today()}`, [{
         name: t('nav.products'),
-        headers: [t('product.code'), t('product.barcode'), t('product.name'), t('product.name2'), t('product.category'), t('product.brand'), t('product.unit'), t('common.currency'),
+        headers: [t('product.code'), t('product.barcode'), t('product.name'), t('product.name2'), t('product.category'), t('product.brand'), t('product.unit'), t('common.currency'), t('product.import_field.price_rate'),
           ...(showCost ? [t('product.cost_price'), t('product.avg_cost_usd')] : []), ...pls.map((p) => p.name), t('product.stock'), t('product.min_stock'), t('product.shelf'), t('product.oem_no')],
-        rows: r.rows.map((p) => [p.code || '', p.barcode || '', p.name, p.name2 || '', p.category_name || '', p.brand_name || '', p.unit || '', p.currency,
+        rows: r.rows.map((p) => [p.code || '', p.barcode || '', p.name, p.name2 || '', p.category_name || '', p.brand_name || '', p.unit || '', p.currency, p.price_rate || '',
           ...(showCost ? [p.cost_price || 0, round(p.avg_cost_usd || 0, 4)] : []), ...pls.map((pl) => (p.prices && p.prices[pl.id] != null ? p.prices[pl.id] : '')), p.track_stock ? p.stock : '', p.min_stock || 0, p.shelf || '', p.oem_no || '']),
       }]);
     } catch (e) { errToast(e); }
@@ -195,7 +195,8 @@ export function ProductPage({ id, query = {} }) {
       const body = {
         id: p.id || undefined, name: p.name, name2: p.name2, code: p.code, barcode: p.barcode, type: p.type, category_id: p.category_id || null,
         brand_id: p.brand_id || null, brand_name: !p.brand_id && p.brand_name ? p.brand_name : undefined, unit: p.unit, currency: p.currency,
-        cost_price: canPrices ? p.cost_price || 0 : undefined, min_stock: p.min_stock || 0, max_stock: p.max_stock, shelf: p.shelf, color: p.color, size: p.size, oem_no: p.oem_no,
+        cost_price: canPrices ? p.cost_price || 0 : undefined, price_rate: canPrices ? (p.price_rate || null) : undefined,
+        min_stock: p.min_stock || 0, max_stock: p.max_stock, shelf: p.shelf, color: p.color, size: p.size, oem_no: p.oem_no,
         warranty_months: p.warranty_months || 0, notes: p.notes, track_stock: p.type === 'service' ? 0 : p.track_stock ? 1 : 0, active: p.active ? 1 : 0,
         prices: canPrices ? p.prices : undefined, codes: p.codes.filter((c) => c.code), fitments: p.fitments.filter((x) => x.make_id || x.model_id || x.make_name),
         photo: p.photo || undefined, photo_remove: p.photo_remove || undefined,
@@ -204,7 +205,7 @@ export function ProductPage({ id, query = {} }) {
       const r = await api.post('/api/products', body);
       toast(t('common.saved'));
       if (body.brand_name) refreshBoot();
-      if (isNew) navigate(`/products/${r.id}`);
+      if (isNew) navigate(`/products/${r.id}`, null, { replace: true });
       else setVer(ver + 1);
     } catch (e) { errToast(e); } finally { setBusy(false); }
   };
@@ -213,7 +214,7 @@ export function ProductPage({ id, query = {} }) {
     try {
       const r = await api.del(`/api/products/${p.id}`);
       toast(r.deactivated ? t('product.deactivated') : t('common.deleted'));
-      navigate('/products');
+      navigate('/products', null, { replace: true });
     } catch (e) { errToast(e); }
   };
   const photo = async () => {
@@ -295,17 +296,19 @@ export function ProductPage({ id, query = {} }) {
         <${Panel} title=${t('product.prices')} icon="tag" tools=${!canPrices && html`<span class="small muted">${t('product.prices_readonly')}</span>`}>
           <div class="grid-form">
             <${Field} label=${t('product.price_currency')} hint=${t('product.price_currency_hint')}><${CurrencySelect} value=${p.currency} onValue=${(v) => set({ currency: v })} disabled=${!canPrices && !isNew} /></${Field}>
+            ${['USD', 'IQD'].includes(p.currency) && html`<${Field} label=${t('product.price_rate')} hint=${t('product.price_rate_hint')}>
+              <${NumInput} value=${p.price_rate ?? null} onValue=${(v) => set({ price_rate: v })} dec=${0} disabled=${!canPrices} placeholder=${t('product.price_rate_ph', { rate: num(usdIqd(), 0) })} /></${Field}>`}
             ${(showCost || canPrices) && html`<${Field} label=${t('product.cost_price')} hint=${t('product.cost_price_hint')}><div class="input-wrap"><${NumInput} value=${p.cost_price} onValue=${(v) => set({ cost_price: v })} dec=${Math.max(decimals(costCur), 2)} disabled=${!canPrices} cls="has-suffix" /><span class="suffix">${costCur}</span></div></${Field}>`}
             ${showCost && p.avg_cost_usd > 0 && html`<${Field} label=${t('product.avg_cost')} hint=${t('product.avg_cost_hint')}><div class="input" style="display:flex;align-items:center;background:var(--surface-2)"><span class="num">${money(p.avg_cost_usd, 'USD')}</span><span class="muted small" style="margin-inline-start:8px">≈ ${money(avgInCur, costCur)}</span></div></${Field}>`}
           </div>
-          <table class="tbl compact mt-16"><thead><tr><th>${t('doc.price_list')}</th><th class="r" style="width:200px">${t('print.col.price')} (${costCur})</th>${showCost && html`<th class="r">${t('product.margin')}</th>`}<th class="r">${costCur === 'USD' ? 'IQD' : 'USD'}</th></tr></thead>
+          <table class="tbl compact mt-16"><thead><tr><th>${t('doc.price_list')}</th><th class="r" style="width:200px">${t('print.col.price')} (${costCur})</th>${showCost && html`<th class="r">${t('product.margin')}</th>`}<th class="r">${costCur === 'USD' ? 'IQD' : 'USD'}${p.price_rate > 0 && ['USD', 'IQD'].includes(costCur) ? html`<div class="tiny muted" style="font-weight:400">${t('product.at_rate', { rate: num(p.price_rate, 0) })}</div>` : null}</th></tr></thead>
             <tbody>${(boot().price_lists || []).filter((pl) => pl.active).map((pl) => {
               const v = p.prices[pl.id];
               const margin = showCost && costBase && v ? (v - costBase) / v * 100 : null;
               return html`<tr><td>${pl.name}${pl.is_default ? html` <${Pill} kind="brass">${t('common.default')}</${Pill}>` : null}</td>
                 <td class="r"><${NumInput} size="sm" value=${v ?? null} onValue=${(nv) => set({ prices: { ...p.prices, [pl.id]: nv === null ? '' : nv } })} dec=${Math.max(decimals(costCur), 2)} disabled=${!canPrices} /></td>
                 ${showCost && html`<td class="r small num ${margin !== null && margin < 0 ? 'neg' : 'muted'}">${margin !== null ? fpct(margin) : ''}</td>`}
-                <td class="r small muted num">${v ? money(convert(v, costCur, costCur === 'USD' ? 'IQD' : 'USD'), costCur === 'USD' ? 'IQD' : 'USD') : ''}</td></tr>`;
+                <td class="r small muted num">${v ? money(convert(v, costCur, costCur === 'USD' ? 'IQD' : 'USD', p.price_rate > 0 ? p.price_rate : undefined), costCur === 'USD' ? 'IQD' : 'USD') : ''}</td></tr>`;
             })}</tbody></table>
           ${showCost && canPrices && costBase ? html`<div class="row wrap gap-8 mt-12 small"><span class="muted">${t('product.quick_margin')}:</span>
             ${[20, 30, 40, 50, 75, 100].map((m) => html`<button type="button" class="chip" onClick=${() => { const dl = (boot().price_lists || []).find((x) => x.is_default) || (boot().price_lists || [])[0]; if (dl) set({ prices: { ...p.prices, [dl.id]: round(costBase * (1 + m / 100), costCur === 'IQD' ? -2 : 2) } }); }}>+${m}%</button>`)}</div>` : null}
@@ -380,7 +383,7 @@ export function ProductPage({ id, query = {} }) {
     </div>`}
 
     ${tab === 'info' && (dirty || isNew) && editable && html`<div class="editor-bar">
-      <${Btn} onClick=${() => (isNew ? navigate('/products') : setP(JSON.parse(orig)))}>${isNew ? t('common.cancel') : t('common.discard')}</${Btn}>
+      <${Btn} onClick=${() => (isNew ? back('/products') : setP(JSON.parse(orig)))}>${isNew ? t('common.cancel') : t('common.discard')}</${Btn}>
       <div class="grow small muted">${dirty && !isNew ? t('common.unsaved') : ''}</div>
       <${Btn} kind="primary" icon="check" disabled=${busy} onClick=${save}>${t('common.save')}</${Btn}>
     </div>`}
@@ -542,7 +545,7 @@ function BulkPriceDialog({ filter, count, close }) {
 }
 
 /* ================================================================== import */
-const IMPORT_FIELDS = ['code', 'barcode', 'name', 'name2', 'category', 'brand', 'unit', 'currency', 'cost_price', 'min_stock', 'shelf', 'color', 'size', 'oem_no', 'stock'];
+const IMPORT_FIELDS = ['code', 'barcode', 'name', 'name2', 'category', 'brand', 'unit', 'currency', 'price_rate', 'cost_price', 'min_stock', 'shelf', 'color', 'size', 'oem_no', 'stock'];
 const GUESS = {
   code: ['code', 'kod', 'stok kodu', 'ürün kodu', 'item code', 'sku', 'كود', 'رمز', 'kod'],
   barcode: ['barcode', 'barkod', 'ean', 'باركود'],
@@ -552,6 +555,7 @@ const GUESS = {
   brand: ['brand', 'marka', 'ماركة', 'العلامة'],
   unit: ['unit', 'birim', 'وحدة'],
   currency: ['currency', 'döviz', 'para birimi', 'عملة'],
+  price_rate: ['price rate', 'fiyat kuru', 'kur', 'rate', 'سعر الصرف', 'rêjeya bihayê', 'kurê bihayê'],
   cost_price: ['cost', 'maliyet', 'alış', 'alış fiyatı', 'purchase price', 'كلفة', 'سعر الشراء'],
   min_stock: ['min', 'minimum', 'kritik', 'min stok'],
   shelf: ['shelf', 'raf', 'رف'],

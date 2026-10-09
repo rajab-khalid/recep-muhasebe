@@ -157,6 +157,12 @@ html[dir="rtl"] .nav-item.active::before { border-radius: 3px 0 0 3px; }
   background: var(--surface); border-bottom: 1px solid var(--line);
 }
 .topbar .title { min-width: 0; }
+.back-btn {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px 0 10px; border-radius: 17px;
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-2); font: inherit; font-size: 13px; cursor: pointer;
+}
+.back-btn:hover { border-color: var(--graphite); color: var(--ink); }
+.back-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .topbar h1 { font-family: var(--font-cond); font-weight: 600; font-size: 21px; letter-spacing: .1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .crumbs { font-size: 12px; color: var(--ink-3); display: flex; gap: 6px; align-items: center; }
 .crumbs a { color: var(--ink-3); }
@@ -570,6 +576,8 @@ html[dir="rtl"] .lines-tbl tr.kind-labor td:first-child { box-shadow: inset -3px
   .topbar { padding: 0 12px; gap: 8px; }
   .topbar h1 { font-size: 18px; }
   .rate-chip .lbl, .topbar .hide-sm { display: none; }
+  .back-btn { padding: 0 9px; }
+  .back-btn span { display: none; }
   .content { padding: 14px 12px 40px; }
   .cluster { grid-template-columns: 1fr; padding: 14px; }
   .readouts { grid-template-columns: repeat(2, 1fr); }

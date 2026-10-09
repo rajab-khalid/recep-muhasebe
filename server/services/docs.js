@@ -198,12 +198,13 @@ module.exports = (app) => {
 
   /* ------------------------------------------------------------------ list price helper (for discount checks) */
   function listPriceIn(productId, priceListId, currency, fx) {
-    const p = db.get('SELECT currency FROM products WHERE id = ?', [productId]);
+    const p = db.get('SELECT currency, price_rate FROM products WHERE id = ?', [productId]);
     if (!p) return null;
     let price = priceListId ? db.val('SELECT price FROM product_prices WHERE product_id = ? AND price_list_id = ?', [productId, priceListId]) : null;
     if (price == null) price = db.val('SELECT price FROM product_prices WHERE product_id = ? AND price_list_id = ?', [productId, app.products.defaultPriceListId()]);
     if (price == null) return null;
-    return app.convert(price, p.currency, currency, fx);
+    // a product with its own rate is priced with that rate, as the screens do
+    return app.convert(price, p.currency, currency, p.price_rate > 0 ? { usd_iqd: p.price_rate } : fx);
   }
 
   /* ------------------------------------------------------------------ validation for sales */

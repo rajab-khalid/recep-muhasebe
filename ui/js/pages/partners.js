@@ -220,7 +220,7 @@ export function PartnerPage({ id, tab = 'statement', query = {} }) {
   const edit = () => openModal(PartnerDialog, { partner: p }).then((r) => r && reload());
   const remove = async () => {
     if (!(await confirmDialog({ title: t('partner.delete'), text: t('partner.delete_text', { name: p.name }), danger: true, okText: t('common.delete') }))) return;
-    try { const r = await api.del(`/api/partners/${p.id}`); toast(r.deactivated ? t('partner.deactivated') : t('common.deleted')); navigate(`/partners/${isSupplier ? 'supplier' : 'customer'}`); } catch (e) { errToast(e); }
+    try { const r = await api.del(`/api/partners/${p.id}`); toast(r.deactivated ? t('partner.deactivated') : t('common.deleted')); navigate(`/partners/${isSupplier ? 'supplier' : 'customer'}`, null, { replace: true }); } catch (e) { errToast(e); }
   };
   const remind = () => { const txt = reminderText(p); if (txt) whatsapp(p.phone, txt); };
   const hasDebt = Object.values(p.balances || {}).some((v) => v > 0);

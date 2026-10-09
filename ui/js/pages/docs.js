@@ -5,11 +5,11 @@ import { t } from '../core/i18n.js';
 import { api, ApiError } from '../core/api.js';
 import { can, boot, useStore } from '../core/store.js';
 import { useTitle } from '../core/page.js';
-import { navigate, back } from '../core/router.js';
+import { navigate, back, previous } from '../core/router.js';
 import { money, num, qty as fqty, convert, today, addDays, date as fdate, dateTime, usdIqd, round, decimals, pct as fpct, rateText } from '../core/format.js';
 import {
   Icon, Btn, IconBtn, Modal, Field, Input, NumInput, Select, Textarea, Segmented, Check, Table, Panel, Empty, Loading, Notice, Pill, Money, Balances, KV,
-  DateRange, periodRange, SearchBox, MenuButton, Combo, useAsync, useDebounced, useHotkeys, openModal, toast, errToast, promptDialog, confirmDialog, DateInput } from '../core/ui.js';
+  DateRange, periodRange, PERIODS, SearchBox, MenuButton, Combo, useAsync, useDebounced, useHotkeys, openModal, toast, errToast, promptDialog, confirmDialog, DateInput } from '../core/ui.js';
 import { DOC_TYPES, MANUAL_STATUSES, ADJUST_REASONS, docType, canDoc, isEditable, isPurchaseSide, usesVehicle, usesWarehouse } from '../core/doctypes.js';
 import { printDoc, previewDoc, shareDoc } from '../core/docprint.js';
 import { downloadXlsx } from '../core/xlsx.js';
@@ -65,11 +65,31 @@ export function DocTable({ rows, showType, showPartner = true, onRow, compact, e
 
 const PAGE = 200;
 
+/*
+ * The dates a list shows: this year at first; the period the user picks (today, this month…) is kept while the
+ * program is open, so coming back to the list shows the same dates. A named period is kept by name, so
+ * "today" stays today tomorrow.
+ */
+const PERIOD_KEY = (type) => `rm_docs_period_${type}`;
+function savedRange(type) {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(PERIOD_KEY(type)) || 'null');
+    if (!v) return null;
+    if (v.period && PERIODS.includes(v.period)) return periodRange(v.period);
+    if (v.from && v.to) return { from: v.from, to: v.to };
+  } catch (e) { /* storage unavailable */ }
+  return null;
+}
+function keepRange(type, from, to) {
+  const period = PERIODS.find((p) => { const r = periodRange(p); return r.from === from && r.to === to; });
+  try { sessionStorage.setItem(PERIOD_KEY(type), JSON.stringify(period ? { period } : { from, to })); } catch (e) { /* storage unavailable */ }
+}
+
 export function DocList({ type, query = {} }) {
   const def = docType(type);
   useTitle(t(def.list));
-  const defaultPeriod = def.statuses ? 'all' : ['transfer', 'adjust'].includes(type) ? '3m' : 'month';
-  const r0 = periodRange(query.period || defaultPeriod);
+  const defaultPeriod = def.statuses ? 'all' : 'year';
+  const r0 = (!query.period && savedRange(type)) || periodRange(query.period || defaultPeriod);
   const [f, setF] = useState({
     from: query.from || r0.from, to: query.to || r0.to, q: query.q || '', payment_status: query.payment_status || '', status: query.status || (def.statuses ? 'active' : ''),
     channel: '', staff_id: '', include_cancelled: false, overdue: query.overdue || '',
@@ -105,7 +125,7 @@ export function DocList({ type, query = {} }) {
   const emptyState = html`<${Empty} icon="search" title=${filtered ? t('doc.none_filtered') : t('doc.none_in_period')}
     text=${`${fdate(f.from)} — ${fdate(f.to)}`}
     action=${html`<div class="row gap-8 mt-12" style="justify-content:center">
-      ${(f.from !== allRange.from || f.to !== allRange.to) && html`<${Btn} size="sm" icon="calendar" onClick=${() => setF({ ...f, ...allRange })}>${t('doc.show_all_dates')}</${Btn}>`}
+      ${(f.from !== allRange.from || f.to !== allRange.to) && html`<${Btn} size="sm" icon="calendar" onClick=${() => { keepRange(type, allRange.from, allRange.to); setF({ ...f, ...allRange }); }}>${t('doc.show_all_dates')}</${Btn}>`}
       ${filtered && html`<${Btn} size="sm" icon="x" onClick=${() => setF({ ...f, q: '', payment_status: '', overdue: '', channel: '', staff_id: '', status: def.statuses ? 'active' : '' })}>${t('doc.clear_filters')}</${Btn}>`}
       ${!filtered && canDoc(type, 'create') && html`<${Btn} size="sm" kind="primary" icon="plus" onClick=${() => navigate(`/docs/${type}/new`)}>${t(`doc.new.${type}`)}</${Btn}>`}
     </div>`} />`;
@@ -113,7 +133,7 @@ export function DocList({ type, query = {} }) {
   return html`<div class="page">
     <div class="toolbar">
       <${SearchBox} value=${f.q} onValue=${(v) => setF({ ...f, q: v })} cls="search" placeholder=${t(usesVehicle(type) ? 'doc.search_ph_vehicle' : 'doc.search_ph')} />
-      <${DateRange} from=${f.from} to=${f.to} onChange=${(r) => setF({ ...f, ...r })} />
+      <${DateRange} from=${f.from} to=${f.to} onChange=${(r) => { keepRange(type, r.from, r.to); setF({ ...f, ...r }); }} />
       ${statusOpts && html`<div style="width:170px"><${Select} value=${f.status} onValue=${(v) => setF({ ...f, status: v })} options=${statusOpts} /></div>`}
       ${def.pay && html`<div style="width:190px"><${Select} value=${f.overdue ? 'overdue' : f.payment_status} onValue=${(v) => setF({ ...f, payment_status: v === 'overdue' ? '' : v, overdue: v === 'overdue' ? 1 : '' })} options=${[
         { value: '', label: t('doc.pay.all') }, { value: 'open', label: t('doc.pay.open') }, { value: 'unpaid', label: t('doc.pay.unpaid') }, { value: 'partial', label: t('doc.pay.partial') },
@@ -482,7 +502,8 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
     if (isPurchaseSide(doc.type)) return round(convert(p.cost_price || 0, p.currency, doc.currency, doc.usd_iqd), Math.max(decimals(doc.currency), 2));
     const pl = doc.price_list_id && p.prices ? p.prices[doc.price_list_id] : undefined;
     const base = pl ?? p.price ?? 0;
-    return round(convert(base, p.currency, doc.currency, doc.usd_iqd), Math.max(decimals(doc.currency), 2));
+    // a product with its own rate is priced with that rate (e.g. $10 at 1.450 = 14.500 IQD), whatever the day's rate is
+    return round(convert(base, p.currency, doc.currency, p.price_rate > 0 ? p.price_rate : doc.usd_iqd), Math.max(decimals(doc.currency), 2));
   }
 
   function addProductTo(doc, p, qty = 1) {
@@ -493,6 +514,7 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
     doc.lines.push({
       key: newKey(), kind: p.type === 'service' ? 'service' : 'product', product_id: p.id, code: p.code, description: p.name, qty: negReason ? -n : n, unit: p.unit,
       unit_price: ['transfer', 'adjust'].includes(doc.type) ? 0 : priceFor(doc, p), discount: 0, discount_pct: null, staff_id: '', track_stock: p.track_stock,
+      p_rate: !isPurchaseSide(doc.type) && p.price_rate > 0 ? p.price_rate : undefined,
       unit_cost_usd: doc.type === 'adjust' && !negReason && p.cost_usd ? round(p.cost_usd, 4) : undefined,
     });
   }
@@ -526,10 +548,12 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
   const changeCurrency = (cur) => {
     if (!d || cur === d.currency) return;
     const from = d.currency;
-    const cv = (v) => round(convert(v || 0, from, cur, d.usd_iqd), Math.max(decimals(cur), 2));
+    const cv = (v, r = d.usd_iqd) => round(convert(v || 0, from, cur, r), Math.max(decimals(cur), 2));
+    // lines priced with a product's own rate are converted back with that same rate
+    const lineRate = (l) => l.p_rate || (l.product_id && !isPurchaseSide(d.type) && (info[`${l.product_id}|${d.warehouse_id}`] || {}).price_rate) || d.usd_iqd;
     set((x) => ({
       currency: cur,
-      lines: x.lines.map((l) => ({ ...l, unit_price: cv(l.unit_price), discount: l.discount_pct ? l.discount : cv(l.discount) })),
+      lines: x.lines.map((l) => ({ ...l, unit_price: cv(l.unit_price, lineRate(l)), discount: l.discount_pct ? l.discount : cv(l.discount, lineRate(l)) })),
       discount: x.discount_pct ? x.discount : cv(x.discount), extra_cost: cv(x.extra_cost), pays: [],
     }));
     if (d.lines.length) toast(t('doc.prices_converted', { from, to: cur }), 'warn');
@@ -633,7 +657,9 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
       setDirty(false);
       toast(t(d.id ? 'doc.updated_ok' : 'doc.saved_ok', { no: saved.no }));
       if (print) printDoc(saved, saved.type === 'service' ? 'job' : 'a4');
-      navigate(`/doc/${saved.id}`);
+      // the saved document takes the form's place, so Back does not open the form again
+      if (d.id && previous() === `/doc/${saved.id}`) back(`/doc/${saved.id}`);
+      else navigate(`/doc/${saved.id}`, null, { replace: true });
     } catch (e) {
       if (e instanceof ApiError && e.code === 'credit_limit') {
         const ok = await confirmDialog({ title: t('doc.credit_limit_title'), text: e.message + '\n\n' + t('doc.credit_limit_text'), okText: t('doc.save_anyway'), danger: true });
@@ -657,7 +683,7 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
   const multiWh = activeWarehouses().length > 1;
   const cancelEdit = async () => {
     if (dirty && !(await confirmDialog({ title: t('doc.discard_title'), text: t('doc.discard_text'), okText: t('doc.discard_ok'), danger: true }))) return;
-    if (d.id) navigate(`/doc/${d.id}`); else back(`/docs/${type}`);
+    back(d.id ? `/doc/${d.id}` : `/docs/${type}`);
   };
   const partnerKind = def.partner;
   const lockedPartner = isReturn && !!d.ref_doc_id;

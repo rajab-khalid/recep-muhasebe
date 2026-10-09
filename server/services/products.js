@@ -147,7 +147,7 @@ module.exports = (app) => {
     const limit = Math.min(Number(f.limit) || 200, 5000);
     const offset = Number(f.offset) || 0;
     const sql = `SELECT * FROM (
-        SELECT p.id, p.no, p.code, p.barcode, p.name, p.name2, p.type, p.unit, p.currency, p.cost_price, p.avg_cost_usd,
+        SELECT p.id, p.no, p.code, p.barcode, p.name, p.name2, p.type, p.unit, p.currency, p.price_rate, p.cost_price, p.avg_cost_usd,
           p.min_stock, p.max_stock, p.shelf, p.color, p.size, p.oem_no, p.warranty_months, p.photo_id, p.track_stock, p.active,
           p.category_id, c.name AS category_name, p.brand_id, b.name AS brand_name, p.last_sale_date, p.last_purchase_date, p.created_at,
           ${stockExpr} AS stock,
@@ -223,6 +223,12 @@ module.exports = (app) => {
       }
       const currency = data.currency || app.getSetting('general').default_currency || 'IQD';
       app.currency(currency);
+      // the product's own rate for turning its price into the other currency (empty = the day's rate)
+      let priceRate;
+      if (data.price_rate !== undefined) {
+        priceRate = data.price_rate === '' || data.price_rate === null ? null : U.num(data.price_rate);
+        U.assert(priceRate === null || (priceRate >= 100 && priceRate <= 100000), 'bad_rate', 'Enter a rate between 100 and 100000');
+      }
       const fields = {
         code: U.str(data.code, 60), barcode, name, name2: U.str(data.name2, 250),
         type: data.type === 'service' ? 'service' : 'product',
@@ -242,11 +248,13 @@ module.exports = (app) => {
         before = db.get('SELECT * FROM products WHERE id = ?', [id]);
         U.assert(before, 'not_found', 'Product not found', 404);
         if (canPrices && data.cost_price !== undefined) fields.cost_price = U.num(data.cost_price);
+        if (canPrices && priceRate !== undefined) fields.price_rate = priceRate;
         if (!canPrices && fields.currency !== before.currency) fields.currency = before.currency;
         db.update('products', id, fields);
       } else {
         id = uuid();
         fields.cost_price = canPrices ? U.num(data.cost_price) : 0;
+        fields.price_rate = canPrices && priceRate !== undefined ? priceRate : null;
         db.insert('products', { id, no: nextProductNo(), ...fields, avg_cost_usd: 0, created_at: now });
       }
       // prices (one per price list)
@@ -365,7 +373,7 @@ module.exports = (app) => {
   /** compact info used by the POS / document editors */
   function forSale(ids, { price_list_id, warehouse_id } = {}) {
     if (!ids.length) return [];
-    const rows = db.all(`SELECT p.id, p.code, p.barcode, p.name, p.name2, p.type, p.unit, p.currency, p.cost_price, p.avg_cost_usd, p.track_stock,
+    const rows = db.all(`SELECT p.id, p.code, p.barcode, p.name, p.name2, p.type, p.unit, p.currency, p.price_rate, p.cost_price, p.avg_cost_usd, p.track_stock,
         p.warranty_months, p.photo_id, p.min_stock, b.name AS brand_name
       FROM products p LEFT JOIN brands b ON b.id = p.brand_id WHERE p.id IN (${ids.map(() => '?').join(',')})`, ids);
     const prices = db.all(`SELECT product_id, price_list_id, price FROM product_prices WHERE product_id IN (${ids.map(() => '?').join(',')})`, ids);
@@ -453,12 +461,14 @@ module.exports = (app) => {
             };
             for (const k of ['code', 'barcode', 'name2', 'unit', 'currency', 'min_stock', 'shelf', 'color', 'size', 'oem_no']) if (given(r[k])) data[k] = r[k];
             if (given(r.cost_price)) data.cost_price = r.cost_price;
+            if (given(r.price_rate)) data.price_rate = r.price_rate;
             if (given(r.category)) { data.category_id = null; data.category_name = r.category; }
             if (given(r.brand)) { data.brand_id = null; data.brand_name = r.brand; }
           } else {
             data = {
               name, code: r.code, barcode: r.barcode, name2: r.name2, category_name: r.category, brand_name: r.brand, unit: r.unit || undefined,
               currency: r.currency || undefined, cost_price: r.cost_price, min_stock: r.min_stock, shelf: r.shelf, color: r.color, size: r.size, oem_no: r.oem_no, prices,
+              price_rate: given(r.price_rate) ? r.price_rate : undefined,
             };
           }
           if (!existing && U.num(r.stock)) data.opening_stock = { qty: U.num(r.stock), unit_cost: r.cost_price };

@@ -97,9 +97,10 @@ export function Pos({ query = {} }) {
   }, [dq, cat, priceListId]);
 
   /* ---------------- cart helpers */
+  // a product with its own rate is priced with that rate, whatever the day's rate is
   const priceIn = (p, cur = currency, r = rate) => {
     const base = p.prices && priceListId && p.prices[priceListId] != null ? p.prices[priceListId] : (p.price || 0);
-    return round(convert(base, p.currency, cur, r), Math.max(decimals(cur), cur === 'IQD' ? 0 : 2));
+    return round(convert(base, p.currency, cur, p.price_rate > 0 ? p.price_rate : r), Math.max(decimals(cur), cur === 'IQD' ? 0 : 2));
   };
   const addProduct = (p, qty = 1) => {
     if (!p) return;
@@ -111,6 +112,7 @@ export function Pos({ query = {} }) {
         key: key(), kind: p.type === 'service' ? 'service' : 'product', product_id: p.id, code: p.code, name: p.name, unit: p.unit, qty,
         unit_price: unitPrice, list_price: unitPrice, discount: 0, discount_pct: null, staff_id: '', stock: p.stock, track_stock: p.track_stock,
         cost_usd: p.cost_usd ?? (p.avg_cost_usd || null), p_currency: p.currency, p_price: p.prices && priceListId ? p.prices[priceListId] ?? p.price : p.price,
+        p_rate: p.price_rate > 0 ? p.price_rate : undefined,
       };
       setActiveKey(nl.key);
       return [...ls, nl];
@@ -147,7 +149,8 @@ export function Pos({ query = {} }) {
   const changeCurrency = (cur) => {
     if (cur === currency) return;
     setLines((ls) => ls.map((l) => {
-      const cv = (v) => round(convert(v || 0, currency, cur, rate), cur === 'IQD' ? 0 : 2);
+      // lines priced with a product's own rate go back and forth with that same rate
+      const cv = (v) => round(convert(v || 0, currency, cur, l.p_rate || rate), cur === 'IQD' ? 0 : 2);
       return { ...l, unit_price: cv(l.unit_price), list_price: cv(l.list_price), discount: l.discount_pct ? 0 : cv(l.discount) };
     }));
     setDocDisc((dd) => (dd.pct ? dd : { amount: round(convert(dd.amount || 0, currency, cur, rate), cur === 'IQD' ? 0 : 2), pct: null }));
@@ -164,8 +167,8 @@ export function Pos({ query = {} }) {
         const p = map[l.product_id];
         if (!p) return l;
         const base = p.prices[plId] ?? p.price ?? 0;
-        const up = round(convert(base, p.currency, currency, rate), currency === 'IQD' ? 0 : 2);
-        return { ...l, unit_price: up, list_price: up };
+        const up = round(convert(base, p.currency, currency, p.price_rate > 0 ? p.price_rate : rate), currency === 'IQD' ? 0 : 2);
+        return { ...l, unit_price: up, list_price: up, p_rate: p.price_rate > 0 ? p.price_rate : undefined };
       }));
     } catch (e) { errToast(e); }
   };

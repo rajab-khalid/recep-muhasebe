@@ -160,7 +160,7 @@ module.exports = (app) => {
     const qtyExpr = f.warehouse_id ? '(SELECT COALESCE(SUM(qty),0) FROM stock_levels s WHERE s.product_id = p.id AND s.warehouse_id = ?)' : '(SELECT COALESCE(SUM(qty),0) FROM stock_levels s WHERE s.product_id = p.id)';
     const qParams = f.warehouse_id ? [f.warehouse_id] : [];
     const pl = app.products.defaultPriceListId();
-    const rows = db.all(`SELECT p.id, p.code, p.barcode, p.name, p.unit, p.shelf, p.currency, p.min_stock, c.name AS category_name, b.name AS brand_name,
+    const rows = db.all(`SELECT p.id, p.code, p.barcode, p.name, p.unit, p.shelf, p.currency, p.price_rate, p.min_stock, c.name AS category_name, b.name AS brand_name,
         ${qtyExpr} AS qty, p.avg_cost_usd, p.cost_price,
         (SELECT price FROM product_prices pp WHERE pp.product_id = p.id AND pp.price_list_id = ?) AS price
       FROM products p LEFT JOIN categories c ON c.id = p.category_id LEFT JOIN brands b ON b.id = p.brand_id
@@ -173,7 +173,8 @@ module.exports = (app) => {
       const unit = r.avg_cost_usd || app.stock.standardCostUsd(r);
       r.unit_cost = R(unit * rate, mode === 'IQD' ? 'IQD' : 'USD4');
       r.value = R(Math.max(r.qty, 0) * unit * rate, mode);
-      r.retail_value = r.price != null ? R(Math.max(r.qty, 0) * app.convert(r.price, r.currency, 'USD') * rate, mode) : null;
+      const pfx = { usd_iqd: r.price_rate > 0 ? r.price_rate : app.usdIqd() };
+      r.retail_value = r.price != null ? R(Math.max(r.qty, 0) * app.convert(r.price, r.currency, mode === 'IQD' ? 'IQD' : 'USD', pfx), mode) : null;
       r.state = r.qty <= 0 ? 'critical' : r.qty <= (r.min_stock > 0 ? r.min_stock : low) ? 'low' : 'ok';
       tot.qty += r.qty; tot.value += r.value; tot.retail_value += r.retail_value || 0; tot.products++;
       out.push(r);

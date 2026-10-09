@@ -119,7 +119,7 @@ export function ProductSearch({ onPick, priceListId, warehouseId, currency, usdI
     }
     if (list[at]) pick(list[at]);
   };
-  const priceIn = (p) => (currency ? convert(p.price || 0, p.currency, currency, usdIqd) : p.price);
+  const priceIn = (p) => (currency ? convert(p.price || 0, p.currency, currency, p.price_rate > 0 ? p.price_rate : usdIqd) : p.price);
   const priceText = (p) => {
     if (priceOf) { const v = priceOf(p); return v == null ? '—' : money(v, currency || p.currency); }
     return p.price != null ? money(priceIn(p), currency || p.currency) : '—';

@@ -249,3 +249,29 @@ test('an admin setting a new PIN lifts a pause from this computer too; over-long
   assert.ok(app.users.login({ user_id: id, pin: '6789', ip: '127.0.0.1' }).token);
   assert.equal(code(() => app.users.save({ ...app.users.get(id), id, password: 'x'.repeat(201) }, ctx)), 'password_too_long');
 });
+
+test("a product's own price rate is used for its price (and the discount check), not the day's rate", () => {
+  const { app, ctx } = freshApp('pricerate');
+  const pl = app.products.defaultPriceListId();
+  const pid = app.products.save({ name: 'Cam filmi', currency: 'USD', cost_price: 5, prices: { [pl]: 10 }, price_rate: 1450 }, ctx);
+  assert.equal(app.db.val('SELECT price_rate FROM products WHERE id = ?', [pid]), 1450);
+  assert.equal(code(() => app.products.save({ id: pid, name: 'Cam filmi', currency: 'USD', price_rate: 50 }, ctx)), 'bad_rate');
+  const sup = app.partners.save({ kind: 'supplier', name: 'Supplier' }, ctx);
+  app.docs.save({ type: 'purchase', partner_id: sup, currency: 'USD', usd_iqd: 1500, lines: [{ product_id: pid, qty: 5, unit_price: 5 }], post: true }, ctx);
+  // a cashier with no discount allowance sells at 14.500 IQD ($10 at the product's 1.450) on a day the rate is 1.500
+  const cash = cashier(app, ctx);
+  app.db.run("UPDATE users SET max_discount_pct = 0 WHERE username = 'kasa'");
+  const c2 = { ...cash, user: app.users.list().find((u) => u.username === 'kasa') };
+  const walkin = app.db.val('SELECT id FROM partners WHERE is_walkin = 1');
+  const sale = () => app.docs.save({ type: 'sale', partner_id: walkin, currency: 'IQD', usd_iqd: 1500, lines: [{ product_id: pid, qty: 1, unit_price: 14500 }],
+    post: true, payments: [{ account_id: app.db.val("SELECT id FROM money_accounts WHERE currency = 'IQD' AND type = 'cash'"), amount: 14500 }] }, c2);
+  assert.ok(sale(), 'no discount: the price matches the product rate');
+  // without the product rate the same price would count as a discount from 15.000
+  app.products.save({ id: pid, name: 'Cam filmi', currency: 'USD', price_rate: '' }, ctx);
+  assert.equal(app.db.val('SELECT price_rate FROM products WHERE id = ?', [pid]), null);
+  assert.equal(code(sale), 'discount_limit');
+  // stock report: shelf value at the product's rate
+  app.products.save({ id: pid, name: 'Cam filmi', currency: 'USD', price_rate: 1450 }, ctx);
+  const row = app.reports.stockCurrent({ mode: 'IQD' }).rows.find((r) => r.id === pid);
+  near(row.retail_value, row.qty * 14500, 1);
+});

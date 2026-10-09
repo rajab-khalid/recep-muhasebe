@@ -565,4 +565,6 @@ export default {
   'picker.in_stock': 'Yalnızca stokta olanlar', 'picker.selected_tab': 'Seçilenler ({n})', 'picker.select_all': 'Listedekilerin hepsini seç',
   'picker.selected_n': '{n} ürün seçildi', 'picker.hint': 'Ürünlere tıklayarak seçin; miktarı satırında değiştirebilirsiniz.', 'picker.add_n': 'Seçilenleri ekle ({n})',
   'picker.added_n': '{n} ürün eklendi', 'picker.more': '{n} ürün daha var; aramayı veya kategoriyi daraltın.', 'picker.keys': 'Klavye: ↑ ↓ ile gezin, Enter ile seçin, Ctrl+Enter ile ekleyin.',
+  'product.price_rate': 'Fiyat kuru (1 USD = ? IQD)', 'product.price_rate_hint': 'Doldurursanız bu ürünün fiyatı faturalarda ve hızlı satışta bu kurla dolar ile dinar arasında çevrilir. Boş bırakırsanız günün kuru kullanılır.', 'product.price_rate_ph': 'Günün kuru ({rate})',
+  'product.at_rate': '{rate} kuruyla', 'product.import_field.price_rate': 'Fiyat kuru',
 };

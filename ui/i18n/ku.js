@@ -565,4 +565,6 @@ export default {
   'picker.in_stock': 'Tenê yên di embarê de', 'picker.selected_tab': 'Hilbijartî ({n})', 'picker.select_all': 'Hemûyên di lîsteyê de hilbijêre',
   'picker.selected_n': '{n} materyal hatin hilbijartin', 'picker.hint': 'Ji bo hilbijartinê li ser materyalan bitikîne; hejmarê li ser her rêzê biguherîne.', 'picker.add_n': 'Yên hilbijartî zêde bike ({n})',
   'picker.added_n': '{n} materyal hatin zêdekirin', 'picker.more': '{n} materyalên din hene; lêgerînê teng bike an kategoriyekê hilbijêre.', 'picker.keys': 'Klavye: bi ↑ ↓ bigere, bi Enter hilbijêre, bi Ctrl+Enter zêde bike.',
+  'product.price_rate': 'Kurê bihayê (1 USD = ? IQD)', 'product.price_rate_hint': 'Eger tije bikî, bihayê vî materyalî di faturayan û firotina bilez de bi vî kurî di navbera dolar û dînarê de tê guhertin. Vala bihêle da ku kurê rojê bê bikaranîn.', 'product.price_rate_ph': 'Kurê rojê ({rate})',
+  'product.at_rate': 'bi kurê {rate}', 'product.import_field.price_rate': 'Kurê bihayê',
 };

@@ -565,4 +565,6 @@ export default {
   'picker.in_stock': 'In stock only', 'picker.selected_tab': 'Selected ({n})', 'picker.select_all': 'Select everything in the list',
   'picker.selected_n': '{n, plural, one {# product selected} other {# products selected}}', 'picker.hint': 'Click products to select them; change the quantity on each row.', 'picker.add_n': 'Add selected ({n})',
   'picker.added_n': '{n, plural, one {# product added} other {# products added}}', 'picker.more': '{n, plural, one {# more product} other {# more products}} not shown; narrow the search or pick a category.', 'picker.keys': 'Keyboard: ↑ ↓ to move, Enter to select, Ctrl+Enter to add.',
+  'product.price_rate': 'Price rate (1 USD = ? IQD)', 'product.price_rate_hint': 'If filled, this product\'s price is converted between dollars and dinars at this rate on invoices and in quick sale. Leave it empty to use the day\'s rate.', 'product.price_rate_ph': 'Day\'s rate ({rate})',
+  'product.at_rate': 'at {rate}', 'product.import_field.price_rate': 'Price rate',
 };

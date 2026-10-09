@@ -11,9 +11,21 @@ function parse() {
 
 let current = parse();
 const listeners = new Set();
+const notify = () => listeners.forEach((fn) => fn(current));
+
+/*
+ * The screens visited in this session, newest last, so the Back button knows whether there is a screen of the
+ * program to go back to (otherwise it goes to the screen's parent page instead of leaving the program).
+ */
+const trail = [current.raw];
+let goingBack = false;
 window.addEventListener('hashchange', () => {
   current = parse();
-  listeners.forEach((fn) => fn(current));
+  if (goingBack || (trail.length > 1 && trail[trail.length - 2] === current.raw)) trail.pop(); // went back (our button or the browser's)
+  else trail.push(current.raw);
+  if (trail.length > 200) trail.splice(0, trail.length - 200);
+  goingBack = false;
+  notify();
 });
 
 export function route() { return current; }
@@ -24,11 +36,19 @@ export function useRoute() {
   return r;
 }
 
-export function navigate(path, query) {
+/** opts.replace: show the page in place of the current one (e.g. a saved document instead of its empty form) */
+export function navigate(path, query, opts = {}) {
   const q = query ? '?' + new URLSearchParams(Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== '')).toString() : '';
   const target = '#' + path + (q.length > 1 ? q : '');
-  if (location.hash === target) { current = parse(); listeners.forEach((fn) => fn(current)); }
-  else location.hash = target;
+  if (location.hash === target) { current = parse(); notify(); return; }
+  if (opts.replace) {
+    history.replaceState(null, '', target);
+    current = parse();
+    trail[trail.length - 1] = current.raw;
+    notify();
+    return;
+  }
+  location.hash = target;
 }
 
 /** replace query params without adding history entries */
@@ -39,10 +59,17 @@ export function setQuery(patch) {
   const s = new URLSearchParams(q).toString();
   history.replaceState(null, '', '#' + r.path + (s ? '?' + s : ''));
   current = parse();
-  listeners.forEach((fn) => fn(current));
+  trail[trail.length - 1] = current.raw;
+  notify();
 }
 
+/** is there an earlier screen of the program to go back to? */
+export function canGoBack() { return trail.length > 1; }
+
+/** the screen before this one ('/doc/12', '/docs/sale?...'), or null */
+export function previous() { return trail.length > 1 ? trail[trail.length - 2] : null; }
+
+/** one screen back; with nothing to go back to, the fallback page (usually the parent list) */
 export function back(fallback = '/') {
-  if (history.length > 1) history.back();
-  else navigate(fallback);
+  if (trail.length > 1) { goingBack = true; history.back(); } else navigate(fallback, null, { replace: true });
 }

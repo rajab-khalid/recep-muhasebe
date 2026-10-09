@@ -317,6 +317,8 @@ const MIGRATIONS = [
   ALTER TABLE users ADD COLUMN locked_until TEXT;
   CREATE TABLE login_failures (ip TEXT PRIMARY KEY, count INTEGER NOT NULL DEFAULT 0, first_at TEXT, locked_until TEXT);
   `,
+  // ---------------------------------------------------------------- v4: a product's own USD/IQD rate for converting its price (empty = the day's rate)
+  `ALTER TABLE products ADD COLUMN price_rate REAL;`,
 ];
 
 module.exports = { MIGRATIONS };

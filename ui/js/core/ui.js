@@ -6,7 +6,7 @@ import { money, num, parseNum, date, today, addDays, monthStart, addMonths, roun
 
 /* ------------------------------------------------------------------ icons & basics */
 // icons that point somewhere: mirrored in right-to-left languages
-const DIR_ICONS = new Set(['chevron-left', 'chevron-right', 'undo-2', 'log-out', 'arrow-up-right', 'arrow-down-left', 'send', 'external-link']);
+const DIR_ICONS = new Set(['chevron-left', 'chevron-right', 'arrow-left', 'undo-2', 'log-out', 'arrow-up-right', 'arrow-down-left', 'send', 'external-link']);
 export function Icon({ name, size, cls = '', title }) {
   const inner = ICONS[name] || ICONS['circle-help'];
   return html`<svg class=${`icon ${size || ''} ${DIR_ICONS.has(name) ? 'dir' : ''} ${cls}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"

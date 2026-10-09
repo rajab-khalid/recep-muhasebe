@@ -565,4 +565,6 @@ export default {
   'picker.in_stock': 'المتوفر في المخزون فقط', 'picker.selected_tab': 'المحدد ({n})', 'picker.select_all': 'تحديد كل ما في القائمة',
   'picker.selected_n': '{n, plural, zero {لم يُحدَّد أي منتج} one {تم تحديد منتج واحد} two {تم تحديد منتجين} few {تم تحديد # منتجات} many {تم تحديد # منتجًا} other {تم تحديد # منتج}}', 'picker.hint': 'انقر على المنتجات لتحديدها، ويمكنك تغيير الكمية في كل سطر.', 'picker.add_n': 'إضافة المحدد ({n})',
   'picker.added_n': '{n, plural, one {أُضيف منتج واحد} two {أُضيف منتجان} few {أُضيفت # منتجات} many {أُضيف # منتجًا} other {أُضيف # منتج}}', 'picker.more': '{n, plural, one {يوجد منتج آخر غير معروض} two {يوجد منتجان آخران غير معروضين} few {توجد # منتجات أخرى غير معروضة} many {يوجد # منتجًا آخر غير معروض} other {يوجد # منتج آخر غير معروض}}؛ ضيّق البحث أو اختر فئة.', 'picker.keys': 'لوحة المفاتيح: ↑ ↓ للتنقل، Enter للتحديد، Ctrl+Enter للإضافة.',
+  'product.price_rate': 'سعر صرف هذا المنتج (1 USD = ? IQD)', 'product.price_rate_hint': 'إذا ملأته، يُحوَّل سعر هذا المنتج بين الدولار والدينار بهذا السعر في الفواتير والبيع السريع. اتركه فارغًا لاستخدام سعر اليوم.', 'product.price_rate_ph': 'سعر اليوم ({rate})',
+  'product.at_rate': 'بسعر {rate}', 'product.import_field.price_rate': 'سعر صرف المنتج',
 };
