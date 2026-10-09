@@ -35,7 +35,7 @@ jobs:
             p.build.publish[0].owner = owner;
             p.build.publish[0].repo = repo;
             const ref = process.env.GITHUB_REF || '';
-            const m = /^refs\/tags\/([vV])(.*)$/.exec(ref);
+            const m = /^refs\/tags\/([vV]\.?)(.*)$/.exec(ref);
             if (m) {
               let v = m[2];
               if (/^\d+\.\d+$/.test(v)) v += '.0';
@@ -44,7 +44,7 @@ jobs:
                 process.exit(1);
               }
               p.version = v;
-              // kurulum dosyası, etiket büyük V ile yazılmış olsa da aynı sürüm sayfasına eklenir
+              // kurulum dosyası, etiket V3.0.1 ya da v.3.0.1 gibi yazılmış olsa da aynı sürüm sayfasına eklenir
               p.build.publish[0].tagNamePrefix = m[1];
             }
             fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
