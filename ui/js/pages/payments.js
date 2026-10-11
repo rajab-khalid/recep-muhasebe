@@ -8,7 +8,7 @@ import { navigate, setQuery } from '../core/router.js';
 import { money, num, convert, today, date as fdate, dateTime, usdIqd, round, decimals, rateText } from '../core/format.js';
 import {
   Icon, Btn, IconBtn, Modal, Drawer, Field, Input, NumInput, Select, Segmented, Check, Table, Panel, Empty, Loading, Notice, Pill, Money, Balances, KV,
-  DateRange, periodRange, SearchBox, useAsync, useDebounced, openModal, toast, errToast, promptDialog, confirmDialog, DateInput } from '../core/ui.js';
+  DateRange, periodRange, SearchBox, useAsync, useDebounced, openModal, toast, errToast, promptDialog, confirmDialog, DateInput, Filters } from '../core/ui.js';
 import { printHtml, escapeHtml } from '../core/print.js';
 import { absUrl } from '../core/invoice.js';
 import { PartnerPicker, AccountSelect, account, defaultAccount, loadPartner, accountOptions } from './pickers.js';
@@ -296,10 +296,12 @@ export function Payments({ query = {} }) {
   return html`<div class="page">
     <div class="toolbar">
       <${Segmented} value=${f.direction} onValue=${(v) => setF({ ...f, direction: v })} options=${[{ value: '', label: t('common.all') }, { value: 'in', label: t('pay.dir.in') }, { value: 'out', label: t('pay.dir.out') }]} />
+      <${Filters} active=${[f.from !== def.from || f.to !== def.to, f.account_id, f.status].filter(Boolean).length}>
       <${DateRange} from=${f.from} to=${f.to} onChange=${(r) => setF({ ...f, ...r })} />
       <div style="width:200px"><${Select} value=${f.account_id} onValue=${(v) => setF({ ...f, account_id: v })} placeholder=${t('pay.all_accounts')} options=${accountOptions({ includeInactive: true })} /></div>
-      <${SearchBox} value=${f.q} onValue=${(v) => setF({ ...f, q: v })} cls="search" />
       <${Check} checked=${f.status === 'cancelled'} onValue=${(v) => setF({ ...f, status: v ? 'cancelled' : '' })} label=${t('common.show_cancelled')} />
+      </${Filters}>
+      <${SearchBox} value=${f.q} onValue=${(v) => setF({ ...f, q: v })} cls="search" />
       <div class="toolbar-end">
       ${can('payments.collect') && html`<${Btn} icon="hand-coins" kind="primary" onClick=${() => newPay('in')}>${t('pay.collect')}</${Btn}>`}
       ${can('payments.pay') && html`<${Btn} icon="send" onClick=${() => newPay('out')}>${t('pay.pay')}</${Btn}>`}
@@ -316,15 +318,15 @@ export function Payments({ query = {} }) {
         rows=${rows} onRow=${open} rowCls=${(r) => (r.status === 'cancelled' ? 'cancelled' : '')}
         empty=${html`<${Empty} icon="hand-coins" title=${t('pay.none')} />`}
         columns=${[
-          { key: 'no', label: t('doc.no'), render: (r) => html`<span class="strong">${r.no}</span>` },
-          { key: 'date', label: t('common.date'), render: (r) => fdate(r.date) },
-          { key: 'partner', label: t('doc.partner'), render: (r) => html`<span dir="auto">${dn(r.partner_name)}</span>` },
-          { key: 'dir', label: t('common.type'), render: (r) => html`<${Pill} kind=${r.direction === 'in' ? 'in' : 'out'}>${t(r.direction === 'in' ? 'pay.dir.in' : 'pay.dir.out')}</${Pill}>` },
-          { key: 'acc', label: t('pay.account'), render: (r) => html`<span class="small">${r.account_name}</span><div class="sub">${t(`pay.method.${r.method}`)}</div>` },
-          { key: 'docs', label: t('pay.for_invoices'), render: (r) => html`<span class="small">${r.doc_nos || html`<span class="muted">${t('pay.on_account')}</span>`}</span>` },
-          { key: 'amount', label: t('pay.amount'), align: 'r', render: (r) => html`<${Money} value=${r.direction === 'in' ? r.amount : -r.amount} cur=${r.currency} colored strong />
+          { key: 'no', label: t('doc.no'), mobile: 'sub', render: (r) => html`<span class="strong">${r.no}</span>` },
+          { key: 'date', label: t('common.date'), mobile: 'sub', render: (r) => fdate(r.date) },
+          { key: 'partner', label: t('doc.partner'), mobile: 'title', render: (r) => html`<span dir="auto">${dn(r.partner_name)}</span>` },
+          { key: 'dir', label: t('common.type'), mobile: 'subright', render: (r) => html`<${Pill} kind=${r.direction === 'in' ? 'in' : 'out'}>${t(r.direction === 'in' ? 'pay.dir.in' : 'pay.dir.out')}</${Pill}>` },
+          { key: 'acc', label: t('pay.account'), mobile: 'row', render: (r) => html`<span class="small">${r.account_name}</span><div class="sub">${t(`pay.method.${r.method}`)}</div>` },
+          { key: 'docs', label: t('pay.for_invoices'), mobile: 'row', render: (r) => html`<span class="small">${r.doc_nos || html`<span class="muted">${t('pay.on_account')}</span>`}</span>` },
+          { key: 'amount', label: t('pay.amount'), align: 'r', mobile: 'right', render: (r) => html`<${Money} value=${r.direction === 'in' ? r.amount : -r.amount} cur=${r.currency} colored strong />
             ${r.applied_currency !== r.currency && html`<div class="sub num">→ ${money(r.applied_amount, r.applied_currency)}</div>`}` },
-          { key: 'user', label: t('common.user'), render: (r) => html`<span class="small muted">${r.user_name || ''}</span>` },
+          { key: 'user', label: t('common.user'), mobile: 'hide', render: (r) => html`<span class="small muted">${r.user_name || ''}</span>` },
         ]} />`}
     </div>
   </div>`;

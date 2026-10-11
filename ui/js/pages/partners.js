@@ -9,7 +9,7 @@ import { navigate } from '../core/router.js';
 import { money, num, convert, today, addMonths, date as fdate, dateTime, round, decimals, usdIqd, display, rateText } from '../core/format.js';
 import {
   Icon, Btn, IconBtn, Modal, Field, Input, NumInput, Select, Textarea, Segmented, Check, Table, Panel, Empty, Loading, Notice, Pill, Money, Balances, KV, Tabs,
-  DateRange, periodRange, SearchBox, MenuButton, useAsync, useDebounced, openModal, toast, errToast, confirmDialog, promptDialog, DateInput } from '../core/ui.js';
+  DateRange, periodRange, SearchBox, MenuButton, useAsync, useDebounced, openModal, toast, errToast, confirmDialog, promptDialog, DateInput, usePhone } from '../core/ui.js';
 import { downloadXlsx } from '../core/xlsx.js';
 import { printTables } from '../core/print.js';
 import { printStatement, whatsapp, reminderText } from '../core/docprint.js';
@@ -186,10 +186,10 @@ export function Partners({ kind = 'customer', query = {} }) {
       <div class="toolbar-end">
       ${showBal && html`<${IconBtn} icon="printer" title=${t('common.print_list')} onClick=${printList} />`}
       <${IconBtn} icon="file-spreadsheet" title=${t('common.export_excel')} onClick=${exportX} />
-      ${can('partners.manage') && html`<${Btn} kind="primary" icon="user-plus" onClick=${add}>${t(kind === 'supplier' ? 'partner.new_supplier' : 'partner.new_customer')}</${Btn}>`}
+      ${can('partners.manage') && html`<${Btn} kind="primary" cls="fab" icon="user-plus" onClick=${add}>${t(kind === 'supplier' ? 'partner.new_supplier' : 'partner.new_customer')}</${Btn}>`}
       </div>
     </div>
-    ${showBal && (Object.keys(totals.recv).length > 0 || Object.keys(totals.pay).length > 0) && html`<div class="grid-2 mb-16">
+    ${showBal && (Object.keys(totals.recv).length > 0 || Object.keys(totals.pay).length > 0) && html`<div class="grid-2 pair mb-16">
       <div class="panel stat"><div class="k">${t('partner.total_receivable')}</div><div class="v"><${Balances} value=${totals.recv} colored=${false} emptyText="0" /></div></div>
       <div class="panel stat"><div class="k">${t('partner.total_payable')}</div><div class="v"><${Balances} value=${totals.pay} colored=${false} emptyText="0" /></div></div>
     </div>`}
@@ -197,11 +197,11 @@ export function Partners({ kind = 'customer', query = {} }) {
       rows=${rows} onRow=${(r) => navigate(`/partner/${r.id}`)} rowCls=${(r) => (r.active ? '' : 'cancelled')}
       empty=${html`<${Empty} icon="users" title=${q ? t('common.no_results') : t('partner.none')} action=${can('partners.manage') && !q && html`<${Btn} kind="primary" icon="user-plus" onClick=${add}>${t('partner.new')}</${Btn}>`} />`}
       columns=${[
-        { key: 'name', label: t('common.name'), render: (r) => html`<div class="cell-name" dir="auto">${dn(r.name)}${r.is_walkin ? html` <${Pill}>${t('partner.walkin_short')}</${Pill}>` : null}${r.kind === 'both' ? html` <${KindPill} kind="both" />` : null}</div>${r.company ? html`<div class="sub" dir="auto">${r.company}</div>` : null}` },
-        { key: 'phone', label: t('common.phone'), render: (r) => html`<span class="ltr small">${r.phone || ''}</span>` },
-        { key: 'city', label: t('partner.city'), render: (r) => html`<span class="small">${r.city || ''}</span>` },
-        showBal && { key: 'bal', label: t('partner.balance'), align: 'r', render: (r) => html`<${Balances} value=${r.balances} emptyText="—" />${r.overdue ? html`<div class="sub neg">${t('partner.overdue_n', { n: r.overdue_docs || '' })}</div>` : null}` },
-        { key: 'last', label: t('partner.last_move'), render: (r) => html`<span class="small muted">${r.last_move ? fdate(r.last_move) : ''}</span>` },
+        { key: 'name', label: t('common.name'), mobile: 'title', render: (r) => html`<div class="cell-name" dir="auto">${dn(r.name)}${r.is_walkin ? html` <${Pill}>${t('partner.walkin_short')}</${Pill}>` : null}${r.kind === 'both' ? html` <${KindPill} kind="both" />` : null}</div>${r.company ? html`<div class="sub" dir="auto">${r.company}</div>` : null}` },
+        { key: 'phone', label: t('common.phone'), mobile: 'sub', render: (r) => html`<span class="ltr small">${r.phone || ''}</span>` },
+        { key: 'city', label: t('partner.city'), mobile: 'sub', render: (r) => html`<span class="small">${r.city || ''}</span>` },
+        showBal && { key: 'bal', label: t('partner.balance'), align: 'r', mobile: 'right', render: (r) => html`<${Balances} value=${r.balances} emptyText="—" />${r.overdue ? html`<div class="sub neg">${t('partner.overdue_n', { n: r.overdue_docs || '' })}</div>` : null}` },
+        { key: 'last', label: t('partner.last_move'), mobile: 'subright', render: (r) => html`<span class="small muted">${r.last_move ? fdate(r.last_move) : ''}</span>` },
       ]} />`}</div>
   </div>`;
 }
@@ -295,6 +295,7 @@ export function PartnerPage({ id, tab = 'statement', query = {} }) {
 }
 
 function Statement({ partner, onChange }) {
+  const phone = usePhone();
   const [range, setRange] = useState({ from: addMonths(today(), -6), to: today() });
   const [cur, setCur] = useState('');
   const { data, loading, reload } = useAsync(() => api.get(`/api/partners/${partner.id}/statement`, { from: range.from, to: range.to, currency: cur || undefined }), [range.from, range.to, cur]);
@@ -319,7 +320,25 @@ function Statement({ partner, onChange }) {
     ${loading && !data ? html`<${Loading} />` : !data.sections.length ? html`<div class="panel"><${Empty} icon="file-text" title=${t('partner.no_moves')} /></div>` : data.sections.map((s) => html`<div class="panel mb-16">
       <div class="panel-head"><h2>${s.currency}</h2><div class="tools small"><span class="muted">${t('partner.opening_balance')}:</span> <${Money} value=${s.opening} cur=${s.currency} colored />
         <span class="muted">· ${t('partner.closing')}:</span> <${Money} value=${s.closing} cur=${s.currency} colored strong /></div></div>
-      <div class="table-wrap"><table class="tbl">
+      ${phone ? html`<div class="mcards">${s.rows.map((r) => { const c = stmtCells(r); return html`<div class=${`mcard ${r.doc_id || r.payment_id ? 'clickable' : ''}`} onClick=${(e) => { if (!e.target.closest('button')) open(r); }}>
+          <div class="mc-top">
+            <div class="mc-main"><div class="mc-title">${c.type} <span class="small muted nowrap">${c.no}</span></div>
+              <div class="mc-sub"><span>${fdate(r.date)}</span>${c.ref ? html`<span class="ltr">→ ${c.ref}</span>` : null}${c.desc ? html`<span dir="auto">${c.desc}</span>` : null}
+                ${r.method ? html`<span>${t(`pay.method.${r.method}`)}${r.account_name ? ` · ${r.account_name}` : ''}</span>` : null}
+                ${r.due_date && r.amount > 0 ? html`<span>${t('doc.due_date')}: ${fdate(r.due_date)}</span>` : null}</div></div>
+            <div class="mc-end">
+              <div class="mc-right"><span class="tiny muted">${t(r.amount > 0 ? 'partner.debit' : 'partner.credit')}</span> <${Money} value=${Math.abs(r.amount)} cur=${s.currency} /></div>
+              ${r.paid_currency && r.paid_currency !== s.currency ? html`<div class="mc-subr num">${money(r.paid_amount, r.paid_currency)}</div>` : null}
+              <div class="mc-subr">${t('partner.balance')}: <${Money} value=${r.balance} cur=${s.currency} colored strong /></div>
+            </div>
+          </div>
+          ${['opening', 'adjust', 'convert'].includes(r.kind) && can('partners.adjust') ? html`<div class="mc-actions"><${Btn} size="sm" kind="ghost" icon="ban" onClick=${() => cancelMove(r)}>${t('common.cancel_doc')}</${Btn}></div>` : null}
+        </div>`; })}
+        <div class="mcard mc-total"><div class="mc-rows">
+          <span class="mc-row"><span class="mc-k">${t('partner.debit')}</span><span class="num">${money(s.debit, s.currency)}</span></span>
+          <span class="mc-row"><span class="mc-k">${t('partner.credit')}</span><span class="num">${money(s.credit, s.currency)}</span></span>
+          <span class="mc-row"><span class="mc-k">${t('partner.closing')}</span><${Money} value=${s.closing} cur=${s.currency} colored strong /></span>
+        </div></div></div>` : html`<div class="table-wrap"><table class="tbl">
         <thead><tr><th>${t('common.date')}</th><th>${t('common.type')}</th><th>${t('doc.no')}</th><th>${t('common.description')}</th><th class="r">${t('partner.debit')}</th><th class="r">${t('partner.credit')}</th><th class="r">${t('partner.balance')}</th><th class="w-actions"></th></tr></thead>
         <tbody>${s.rows.map((r) => { const c = stmtCells(r); return html`<tr class=${r.doc_id || r.payment_id ? 'clickable' : ''} onClick=${(e) => { if (!e.target.closest('button')) open(r); }}>
           <td class="nowrap">${fdate(r.date)}</td>
@@ -332,7 +351,7 @@ function Statement({ partner, onChange }) {
           <td class="w-actions">${['opening', 'adjust', 'convert'].includes(r.kind) && can('partners.adjust') ? html`<${IconBtn} icon="ban" danger title=${t('common.cancel_doc')} onClick=${() => cancelMove(r)} />` : null}</td>
         </tr>`; })}</tbody>
         <tfoot><tr><td colspan="4">${t('common.total')}</td><td class="r num">${money(s.debit, s.currency)}</td><td class="r num">${money(s.credit, s.currency)}</td><td class="r"><${Money} value=${s.closing} cur=${s.currency} colored /></td><td></td></tr></tfoot>
-      </table></div></div>`)}
+      </table></div>`}</div>`)}
     <p class="small muted">${t('partner.statement_hint')}</p>
   </div>`;
 }
@@ -343,13 +362,13 @@ function OpenDocs({ partner, onChange }) {
   return html`<div class="panel">${loading && !data ? html`<${Loading} />` : html`<${Table} rows=${data || []} onRow=${(r) => navigate(`/doc/${r.id}`)}
     empty=${html`<${Empty} icon="circle-check" title=${t('partner.no_open_docs')} />`}
     columns=${[
-      { key: 'no', label: t('doc.no'), render: (r) => html`<span class="strong">${r.no}</span>` },
-      { key: 'type', label: t('common.type'), render: (r) => t(`doc.type.${r.type}`) },
-      { key: 'date', label: t('common.date'), render: (r) => fdate(r.date) },
-      { key: 'due', label: t('doc.due_date'), render: (r) => (r.due_date ? html`<span class=${r.overdue_days ? 'neg' : ''}>${fdate(r.due_date)}${r.overdue_days ? html`<div class="sub neg">${t('doc.overdue_days', { n: r.overdue_days })}</div>` : null}</span>` : '—') },
-      { key: 'total', label: t('doc.total'), align: 'r', render: (r) => html`<${Money} value=${r.total} cur=${r.currency} />` },
-      { key: 'rem', label: t('doc.remaining'), align: 'r', render: (r) => html`<${Money} value=${r.remaining} cur=${r.currency} cls="neg" strong />` },
-      { key: 'act', label: '', cls: 'w-actions', render: (r) => can(['sale', 'purchase_return'].includes(r.type) ? 'payments.collect' : 'payments.pay') && html`<${Btn} size="sm" icon="hand-coins" onClick=${() => pay(r)}>${t(['sale', 'purchase_return'].includes(r.type) ? 'pay.collect' : 'pay.pay')}</${Btn}>` },
+      { key: 'no', label: t('doc.no'), mobile: 'title', render: (r) => html`<span class="strong">${r.no}</span>` },
+      { key: 'type', label: t('common.type'), mobile: 'sub', render: (r) => t(`doc.type.${r.type}`) },
+      { key: 'date', label: t('common.date'), mobile: 'sub', render: (r) => fdate(r.date) },
+      { key: 'due', label: t('doc.due_date'), mobile: 'row', render: (r) => (r.due_date ? html`<span class=${r.overdue_days ? 'neg' : ''}>${fdate(r.due_date)}${r.overdue_days ? html`<div class="sub neg">${t('doc.overdue_days', { n: r.overdue_days })}</div>` : null}</span>` : '—') },
+      { key: 'total', label: t('doc.total'), align: 'r', mobile: 'row', render: (r) => html`<${Money} value=${r.total} cur=${r.currency} />` },
+      { key: 'rem', label: t('doc.remaining'), align: 'r', mobile: 'right', render: (r) => html`<${Money} value=${r.remaining} cur=${r.currency} cls="neg" strong />` },
+      { key: 'act', label: '', cls: 'w-actions', mobile: 'actions', render: (r) => can(['sale', 'purchase_return'].includes(r.type) ? 'payments.collect' : 'payments.pay') && html`<${Btn} size="sm" icon="hand-coins" onClick=${() => pay(r)}>${t(['sale', 'purchase_return'].includes(r.type) ? 'pay.collect' : 'pay.pay')}</${Btn}>` },
     ]} />`}</div>`;
 }
 
@@ -368,12 +387,12 @@ function PartnerPayments({ partner, onChange }) {
   return html`<div class="panel">${loading && !data ? html`<${Loading} />` : html`<${Table} rows=${data || []} onRow=${(r) => openModal(PaymentDrawer, { id: r.id }).then((x) => { if (x) { reload(); onChange && onChange(); } })}
     empty=${html`<${Empty} icon="hand-coins" title=${t('pay.none')} />`}
     columns=${[
-      { key: 'no', label: t('doc.no'), render: (r) => html`<span class="strong">${r.no}</span>` },
-      { key: 'date', label: t('common.date'), render: (r) => fdate(r.date) },
-      { key: 'dir', label: t('common.type'), render: (r) => html`<${Pill} kind=${r.direction === 'in' ? 'in' : 'out'}>${r.purpose === 'change' ? t('pos.change') : t(r.direction === 'in' ? 'pay.dir.in' : 'pay.dir.out')}</${Pill}>` },
-      { key: 'acc', label: t('pay.account'), render: (r) => html`<span class="small">${r.account_name}</span>` },
-      { key: 'docs', label: t('pay.for_invoices'), render: (r) => html`<span class="small">${r.doc_nos || ''}</span>` },
-      { key: 'amount', label: t('pay.amount'), align: 'r', render: (r) => html`<${Money} value=${r.amount} cur=${r.currency} strong />${r.applied_currency !== r.currency ? html`<div class="sub num">→ ${money(r.applied_amount, r.applied_currency)}</div>` : null}` },
+      { key: 'no', label: t('doc.no'), mobile: 'title', render: (r) => html`<span class="strong">${r.no}</span>` },
+      { key: 'date', label: t('common.date'), mobile: 'sub', render: (r) => fdate(r.date) },
+      { key: 'dir', label: t('common.type'), mobile: 'subright', render: (r) => html`<${Pill} kind=${r.direction === 'in' ? 'in' : 'out'}>${r.purpose === 'change' ? t('pos.change') : t(r.direction === 'in' ? 'pay.dir.in' : 'pay.dir.out')}</${Pill}>` },
+      { key: 'acc', label: t('pay.account'), mobile: 'sub', render: (r) => html`<span class="small">${r.account_name}</span>` },
+      { key: 'docs', label: t('pay.for_invoices'), mobile: 'row', render: (r) => html`<span class="small">${r.doc_nos || ''}</span>` },
+      { key: 'amount', label: t('pay.amount'), align: 'r', mobile: 'right', render: (r) => html`<${Money} value=${r.amount} cur=${r.currency} strong />${r.applied_currency !== r.currency ? html`<div class="sub num">→ ${money(r.applied_amount, r.applied_currency)}</div>` : null}` },
     ]} />`}</div>`;
 }
 
@@ -384,8 +403,8 @@ function PartnerVehicles({ partner, onChange }) {
     <div class="panel"><${Table} rows=${partner.vehicles} onRow=${(v) => navigate(`/vehicle/${v.id}`)}
       empty=${html`<${Empty} icon="car" title=${t('vehicle.none')} />`}
       columns=${[
-        { key: 'plate', label: t('vehicle.plate'), render: (v) => html`<span class="strong ltr">${v.plate || '—'}</span>` },
-        { key: 'desc', label: t('vehicle.model'), render: (v) => html`<span dir="auto">${v.description}</span>` },
+        { key: 'plate', label: t('vehicle.plate'), mobile: 'title', render: (v) => html`<span class="strong ltr">${v.plate || '—'}</span>` },
+        { key: 'desc', label: t('vehicle.model'), mobile: 'sub', render: (v) => html`<span dir="auto">${v.description}</span>` },
         { key: 'vin', label: t('vehicle.vin'), render: (v) => html`<span class="small ltr">${v.vin || ''}</span>` },
         { key: 'km', label: t('vehicle.km'), align: 'r', render: (v) => (v.km ? num(v.km) : '') },
       ]} /></div>

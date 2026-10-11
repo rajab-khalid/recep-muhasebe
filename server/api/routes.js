@@ -38,10 +38,11 @@ module.exports = function registerRoutes(router, app) {
   /* ================================================================ public / setup / auth */
   router.get('/api/ping', () => ({ ok: true, version: app.version, setup_done: app.setup.isDone(), time: U.nowIso() }), { public: true });
 
-  router.get('/api/setup/status', () => ({
+  router.get('/api/setup/status', (ctx) => ({
     done: app.setup.isDone(), seeded: app.setup.isSeeded(),
     empty: !app.db.get('SELECT 1 FROM docs LIMIT 1') && !app.db.get('SELECT 1 FROM products LIMIT 1'),
     lang: app.getSetting('general').lang, version: app.version,
+    remote: !!ctx.remote, // opened through the phone app's secure address
   }), { public: true });
 
   const setupGuard = () => U.assert(!app.setup.isDone(), 'setup_done', 'Setup is already completed', 409);
@@ -111,7 +112,7 @@ module.exports = function registerRoutes(router, app) {
       walkin_id: app.partners.walkinId(),
       seed_names: ROLE_SEED || (ROLE_SEED = [...SEED_NAMES, ...Object.values(app.setup.ROLE_NAMES || {})]),
       permissions_catalog: PERMISSIONS,
-      server: { port: ctx.port, lan: lanAddresses(), lan_enabled: !!s.network.lan_enabled, desktop: !!app.opts.desktop, data_dir: can(ctx, 'settings.manage') ? app.dataDir : undefined },
+      server: { port: ctx.port, lan: lanAddresses(), lan_enabled: !!s.network.lan_enabled, desktop: !!app.opts.desktop, remote: !!ctx.remote, data_dir: can(ctx, 'settings.manage') ? app.dataDir : undefined },
       today: U.today(),
     };
   });

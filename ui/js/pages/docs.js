@@ -9,7 +9,8 @@ import { navigate, back, previous } from '../core/router.js';
 import { money, num, qty as fqty, convert, today, addDays, date as fdate, dateTime, usdIqd, round, decimals, pct as fpct, rateText } from '../core/format.js';
 import {
   Icon, Btn, IconBtn, Modal, Field, Input, NumInput, Select, Textarea, Segmented, Check, Table, Panel, Empty, Loading, Notice, Pill, Money, Balances, KV,
-  DateRange, periodRange, PERIODS, SearchBox, MenuButton, Combo, useAsync, useDebounced, useHotkeys, openModal, toast, errToast, promptDialog, confirmDialog, DateInput } from '../core/ui.js';
+  DateRange, periodRange, PERIODS, SearchBox, MenuButton, Combo, useAsync, useDebounced, useHotkeys, openModal, toast, errToast, promptDialog, confirmDialog, DateInput,
+  Filters, usePhone } from '../core/ui.js';
 import { DOC_TYPES, MANUAL_STATUSES, ADJUST_REASONS, docType, canDoc, isEditable, isPurchaseSide, usesVehicle, usesWarehouse } from '../core/doctypes.js';
 import { printDoc, previewDoc, shareDoc } from '../core/docprint.js';
 import { downloadXlsx } from '../core/xlsx.js';
@@ -41,25 +42,27 @@ export function DocTable({ rows, showType, showPartner = true, onRow, compact, e
   const stockDocs = rows.some((r) => ['transfer', 'adjust'].includes(r.type));
   const vehicle = rows.some((r) => r.vehicle_plate);
   const profit = can('products.cost') && rows.some((r) => r.type === 'sale' && r.profit_usd != null);
+  // phone card: the customer on top, number and date under it, the amount and what is left at the end
+  const named = showPartner && !stockDocs;
   return html`<${Table} compact=${compact} rows=${rows} empty=${empty} onRow=${onRow || ((r) => navigate(`/doc/${r.id}`))} rowCls=${(r) => (r.status === 'cancelled' ? 'cancelled' : '')}
     columns=${[
-      { key: 'no', label: t('doc.no'), render: (r) => html`<span class="strong nowrap">${r.no}</span>${r.channel === 'pos' ? html` <${Pill}>POS</${Pill}>` : null}` },
-      showType && { key: 'type', label: t('common.type'), render: (r) => t(`doc.type.${r.type}`) },
-      { key: 'date', label: t('common.date'), render: (r) => html`<span class="nowrap">${fdate(r.date)}</span>` },
-      showPartner && !stockDocs && { key: 'partner', label: t('doc.partner'), render: (r) => html`<span dir="auto">${dn(r.partner_name) || '—'}</span>${r.partner_phone ? html`<div class="sub">${r.partner_phone}</div>` : null}` },
-      vehicle && { key: 'veh', label: t('doc.vehicle'), render: (r) => (r.vehicle_plate ? html`<span class="ltr strong">${r.vehicle_plate}</span><div class="sub" dir="auto">${r.vehicle_desc || ''}</div>` : '') },
-      has('service') && { key: 'tech', label: t('doc.technician'), render: (r) => r.technician_name || '' },
-      has('service') && { key: 'complaint', label: t('doc.complaint'), render: (r) => html`<span class="small ellipsis" style="max-width:260px;display:inline-block" dir="auto">${r.complaint || ''}</span>` },
-      stockDocs && { key: 'wh', label: t('doc.warehouse'), render: (r) => (r.type === 'transfer' ? html`${r.warehouse_name} <${Icon} name="chevron-right" size="sm" /> ${r.to_warehouse_name}` : html`${r.warehouse_name || ''}${r.reason ? html`<div class="sub">${t(`adjust.reason.${r.reason}`)}</div>` : null}`) },
-      stockDocs && { key: 'lines', label: t('doc.lines'), align: 'r', render: (r) => num(r.line_count) },
-      !stockDocs && { key: 'total', label: t('doc.total'), align: 'r', render: (r) => html`<${Money} value=${r.total} cur=${r.currency} strong />` },
-      trade && { key: 'rem', label: t('doc.remaining'), align: 'r', render: (r) => (r.remaining > tolOf(r.currency) && r.status === 'posted' ? html`<${Money} value=${r.remaining} cur=${r.currency} cls="neg" />${r.overdue_days ? html`<div class="sub neg">${t('doc.overdue_days', { n: r.overdue_days })}</div>` : null}` : '') },
-      profit && { key: 'profit', label: t('doc.profit'), align: 'r', render: (r) => (r.type === 'sale' && r.status === 'posted' && r.profit_usd != null ? html`<span class=${`num small ${r.profit_usd < 0 ? 'neg' : 'muted'}`}>${money(convert(r.profit_usd, 'USD', r.currency, r.usd_iqd), r.currency)}</span>` : '') },
-      { key: 'status', label: t('doc.status'), render: (r) => (r.status === 'cancelled' ? html`<${Pill}>${t('doc.status.cancelled')}</${Pill}>`
+      { key: 'no', label: t('doc.no'), mobile: named ? 'sub' : 'title', render: (r) => html`<span class="strong nowrap">${r.no}</span>${r.channel === 'pos' ? html` <${Pill}>POS</${Pill}>` : null}` },
+      showType && { key: 'type', label: t('common.type'), mobile: 'sub', render: (r) => t(`doc.type.${r.type}`) },
+      { key: 'date', label: t('common.date'), mobile: 'sub', render: (r) => html`<span class="nowrap">${fdate(r.date)}</span>` },
+      named && { key: 'partner', label: t('doc.partner'), mobile: 'title', render: (r) => html`<span dir="auto">${dn(r.partner_name) || '—'}</span>${r.partner_phone ? html`<div class="sub">${r.partner_phone}</div>` : null}` },
+      vehicle && { key: 'veh', label: t('doc.vehicle'), mobile: 'row', render: (r) => (r.vehicle_plate ? html`<span class="ltr strong">${r.vehicle_plate}</span><div class="sub" dir="auto">${r.vehicle_desc || ''}</div>` : '') },
+      has('service') && { key: 'tech', label: t('doc.technician'), mobile: 'row', render: (r) => r.technician_name || '' },
+      has('service') && { key: 'complaint', label: t('doc.complaint'), mobile: 'row', render: (r) => (r.complaint ? html`<span class="small ellipsis" style="max-width:260px;display:inline-block" dir="auto">${r.complaint}</span>` : '') },
+      stockDocs && { key: 'wh', label: t('doc.warehouse'), mobile: 'sub', render: (r) => (r.type === 'transfer' ? html`${r.warehouse_name} <${Icon} name="chevron-right" size="sm" /> ${r.to_warehouse_name}` : html`${r.warehouse_name || ''}${r.reason ? html`<div class="sub">${t(`adjust.reason.${r.reason}`)}</div>` : null}`) },
+      stockDocs && { key: 'lines', label: t('doc.lines'), align: 'r', mobile: 'right', render: (r) => num(r.line_count) },
+      !stockDocs && { key: 'total', label: t('doc.total'), align: 'r', mobile: 'right', render: (r) => html`<${Money} value=${r.total} cur=${r.currency} strong />` },
+      trade && { key: 'rem', label: t('doc.remaining'), align: 'r', mobile: 'subright', render: (r) => (r.remaining > tolOf(r.currency) && r.status === 'posted' ? html`<${Money} value=${r.remaining} cur=${r.currency} cls="neg" />${r.overdue_days ? html`<div class="sub neg">${t('doc.overdue_days', { n: r.overdue_days })}</div>` : null}` : '') },
+      profit && { key: 'profit', label: t('doc.profit'), align: 'r', mobile: 'row', render: (r) => (r.type === 'sale' && r.status === 'posted' && r.profit_usd != null ? html`<span class=${`num small ${r.profit_usd < 0 ? 'neg' : 'muted'}`}>${money(convert(r.profit_usd, 'USD', r.currency, r.usd_iqd), r.currency)}</span>` : '') },
+      { key: 'status', label: t('doc.status'), mobile: 'subright', render: (r) => (r.status === 'cancelled' ? html`<${Pill}>${t('doc.status.cancelled')}</${Pill}>`
         : r.status === 'draft' ? html`<${Pill} kind="warn">${t('doc.status.draft')}</${Pill}>`
           : DOC_TYPES[r.type] && DOC_TYPES[r.type].statuses ? html`<${StatusPill} type=${r.type} status=${r.status} />`
             : r.payment_status ? html`<${PayPill} status=${r.payment_status} />` : html`<${Pill} kind="in">${t('doc.status.posted')}</${Pill}>`) },
-      { key: 'staff', label: t('doc.staff'), render: (r) => html`<span class="small muted">${r.staff_name || r.created_by_name || ''}</span>` },
+      { key: 'staff', label: t('doc.staff'), mobile: 'hide', render: (r) => html`<span class="small muted">${r.staff_name || r.created_by_name || ''}</span>` },
     ]} />`;
 }
 
@@ -133,6 +136,7 @@ export function DocList({ type, query = {} }) {
   return html`<div class="page">
     <div class="toolbar">
       <${SearchBox} value=${f.q} onValue=${(v) => setF({ ...f, q: v })} cls="search" placeholder=${t(usesVehicle(type) ? 'doc.search_ph_vehicle' : 'doc.search_ph')} />
+      <${Filters} active=${[f.from !== periodRange(defaultPeriod).from || f.to !== periodRange(defaultPeriod).to, f.payment_status || f.overdue, f.channel, f.staff_id, f.include_cancelled, def.statuses && f.status !== 'active'].filter(Boolean).length}>
       <${DateRange} from=${f.from} to=${f.to} onChange=${(r) => { keepRange(type, r.from, r.to); setF({ ...f, ...r }); }} />
       ${statusOpts && html`<div style="width:170px"><${Select} value=${f.status} onValue=${(v) => setF({ ...f, status: v })} options=${statusOpts} /></div>`}
       ${def.pay && html`<div style="width:190px"><${Select} value=${f.overdue ? 'overdue' : f.payment_status} onValue=${(v) => setF({ ...f, payment_status: v === 'overdue' ? '' : v, overdue: v === 'overdue' ? 1 : '' })} options=${[
@@ -141,12 +145,13 @@ export function DocList({ type, query = {} }) {
       ${type === 'sale' && html`<div style="width:140px"><${Select} value=${f.channel} onValue=${(v) => setF({ ...f, channel: v })} options=${[{ value: '', label: t('doc.channel.all') }, { value: 'pos', label: 'POS' }]} /></div>`}
       ${['sale', 'service', 'quote'].includes(type) && html`<div style="width:160px"><${StaffSelect} value=${f.staff_id} onValue=${(v) => setF({ ...f, staff_id: v })} placeholder=${t('doc.all_staff')} /></div>`}
       <${Check} checked=${f.include_cancelled} onValue=${(v) => setF({ ...f, include_cancelled: v })} label=${t('common.show_cancelled')} />
+      </${Filters}>
       <div class="toolbar-end">
       <${IconBtn} icon="printer" title=${t('common.print_list')} onClick=${printList} />
       <${IconBtn} icon="file-spreadsheet" title=${t('common.export_excel')} onClick=${exportX} />
       ${type === 'sale' && can('pos.use') && html`<${Btn} icon="shopping-cart" onClick=${() => navigate('/pos')}>${t('nav.pos')}</${Btn}>`}
       ${def.returnOf && canDoc(type, 'create') && html`<${Btn} kind="primary" icon="search" onClick=${() => openModal(FindInvoiceDialog, { type: def.returnOf }).then((d) => d && navigate(`/docs/${type}/new`, { from: d.id }))}>${t('doc.return_from_invoice')}</${Btn}>`}
-      ${canDoc(type, def.returnOf ? 'create_unlinked' : 'create') && html`<${Btn} kind=${def.returnOf ? '' : 'primary'} icon="plus" onClick=${() => navigate(`/docs/${type}/new`)}>${t(`doc.new.${type}`)}</${Btn}>`}
+      ${canDoc(type, def.returnOf ? 'create_unlinked' : 'create') && html`<${Btn} kind=${def.returnOf ? '' : 'primary'} cls=${def.returnOf ? '' : 'fab'} icon="plus" onClick=${() => navigate(`/docs/${type}/new`)}>${t(`doc.new.${type}`)}</${Btn}>`}
       </div>
     </div>
     ${data && data.totals.length > 0 && html`<div class="row wrap gap-16 mb-12 small">
@@ -177,6 +182,7 @@ export function DocView({ id }) {
   const { data: d, loading, error, reload } = useAsync(() => api.get(`/api/docs/${id}`), [id]);
   useTitle(d ? `${d.no}` : t('common.loading'), d ? [{ label: t(docType(d.type).list), href: `#/docs/${d.type}` }] : null);
   useHotkeys({ 'ctrl+p': () => { if (d) printDoc(d, d.type === 'service' ? 'job' : 'a4'); } }, [d]);
+  const phone = usePhone();
   if (loading && !d) return html`<${Loading} />`;
   if (error) return html`<div class="page"><${Notice} kind="err">${error.message}</${Notice}></div>`;
   const def = docType(d.type);
@@ -227,7 +233,7 @@ export function DocView({ id }) {
   const costCur = showCost ? d.cost_usd * d.rate : null;
 
   return html`<div class="page stack">
-    <div class="row wrap gap-8">
+    <div class="row wrap gap-8 doc-top">
       <div class="row gap-8 grow wrap">
         <${Pill} kind="dark">${t(`doc.type.${d.type}`)}</${Pill}>
         ${cancelled ? html`<${Pill} kind="out">${t('doc.status.cancelled')}</${Pill}>` : d.status === 'draft' ? html`<${Pill} kind="warn">${t('doc.status.draft')}</${Pill}>` : def.statuses ? html`<${StatusPill} type=${d.type} status=${d.status} />` : null}
@@ -251,7 +257,7 @@ export function DocView({ id }) {
     <div class="split wide-side">
       <div class="stack">
         <${Panel} body=${false} title=${t('doc.lines')} icon="list">
-          <div class="table-wrap"><table class="tbl">
+          ${phone ? html`<${LineCards} d=${d} showCost=${showCost} />` : html`<div class="table-wrap"><table class="tbl">
             <thead><tr><th class="c" style="width:34px">#</th><th>${t('print.col.desc')}</th><th class="r">${t('print.col.qty')}</th><th class="r">${t('print.col.price')}</th>
               <th class="r">${t('print.col.discount')}</th><th class="r">${t('print.col.total')}</th>
               ${showCost && ['sale', 'sale_return', 'purchase'].includes(d.type) && html`<th class="r">${t('doc.unit_cost')}</th>`}</tr></thead>
@@ -266,7 +272,7 @@ export function DocView({ id }) {
               <td class="r">${l.kind === 'text' || ['transfer', 'adjust'].includes(d.type) ? '' : html`<${Money} value=${l.line_total} cur=${cur} strong />`}</td>
               ${showCost && ['sale', 'sale_return', 'purchase'].includes(d.type) && html`<td class="r small muted num">${l.unit_cost_usd != null && l.kind !== 'text' ? money(convert(l.unit_cost_usd, 'USD', cur, d.usd_iqd), cur) : ''}</td>`}
             </tr>`)}</tbody>
-          </table></div>
+          </table></div>`}
         </${Panel}>
         <div class="grid-2">
           <div class="stack">
@@ -342,6 +348,29 @@ export function DocView({ id }) {
   </div>`;
 }
 
+/** the lines of a document on a phone: one small card per line */
+function LineCards({ d, showCost }) {
+  const cur = d.currency;
+  const stockDoc = ['transfer', 'adjust'].includes(d.type);
+  return html`<div class="mlines">${d.lines.map((l) => {
+    if (l.kind === 'text') return html`<div class="mline kind-text"><div class="ml-desc muted" dir="auto">${l.description}</div></div>`;
+    const meta = [l.code, l.staff_name, l.warranty_until ? `${t('print.warranty_until')}: ${fdate(l.warranty_until)}` : '', l.returned_qty ? t('doc.returned_qty', { n: fqty(l.returned_qty) }) : '', l.note].filter(Boolean).join(' · ');
+    return html`<div class=${`mline kind-${l.kind}`}>
+      <div class="ml-top">
+        <div class="ml-desc" dir="auto">${l.product_id ? html`<a href=${`#/products/${l.product_id}`}>${l.description}</a>` : l.description}${l.kind === 'labor' && html` <${Pill} kind="info">${t('doc.kind.labor')}</${Pill}>`}</div>
+        ${!stockDoc && html`<div class="ml-total"><${Money} value=${l.line_total} cur=${cur} strong /></div>`}
+      </div>
+      <div class="ml-calc">
+        <span class="num">${fqty(l.qty)} <span class="muted">${dn(l.unit) || ''}</span></span>
+        ${!stockDoc && html`<span class="muted">×</span><${Money} value=${l.unit_price} cur=${cur} />`}
+        ${l.discount ? html`<span class="num neg">−${l.discount_pct ? fpct(l.discount_pct) : money(l.discount, cur)}</span>` : null}
+        ${showCost && ['sale', 'sale_return', 'purchase'].includes(d.type) && l.unit_cost_usd != null ? html`<span class="muted num">${t('doc.cost_short')}: ${money(convert(l.unit_cost_usd, 'USD', cur, d.usd_iqd), cur)}</span>` : null}
+      </div>
+      ${meta && html`<div class="ml-meta">${meta}</div>`}
+    </div>`;
+  })}</div>`;
+}
+
 function CancelDialog({ doc, close }) {
   const [reason, setReason] = useState('');
   const hasPays = (doc.payments || []).length > 0;
@@ -415,6 +444,7 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
   const [dirty, setDirty] = useState(false);
   const [vehMore, setVehMore] = useState(false);
   const searchRef = useRef(null);
+  const phone = usePhone();
   const type = d ? d.type : typeProp;
   const def = docType(type);
   useTitle(d ? (d.id ? `${d.no} — ${t('common.edit')}` : t(`doc.new.${type}`)) : t('common.loading'), [{ label: t(def.list), href: `#/docs/${type}` }]);
@@ -541,7 +571,7 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
   };
   const addFree = (kind) => {
     set((x) => ({ lines: [...x.lines, { key: newKey(), kind, product_id: null, code: '', description: '', qty: kind === 'text' ? 0 : 1, unit: '', unit_price: 0, discount: 0, discount_pct: null, staff_id: kind === 'labor' ? (x.technician_id || '') : '' }] }));
-    setTimeout(() => { const el = document.querySelectorAll('.lines-tbl .desc-input'); if (el.length) el[el.length - 1].focus(); }, 30);
+    setTimeout(() => { const el = document.querySelectorAll('.lines-tbl .desc-input, .mlines .desc-input'); if (el.length) el[el.length - 1].focus(); }, 30);
   };
 
   /* ---------- currency / price list changes */
@@ -687,6 +717,43 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
   };
   const partnerKind = def.partner;
   const lockedPartner = isReturn && !!d.ref_doc_id;
+  function lineState(l) {
+    const c = lineCalc(l, dec);
+    const st = l.product_id ? stockOf(l) : null;
+    const cost = l.product_id && showCost ? costOf(l) : null;
+    const netUnit = l.qty ? (c.total * (calc.sum ? calc.total / calc.sum : 1)) / l.qty : 0;
+    const below = cost && type === 'sale' && l.kind === 'product' && netUnit < cost * docRate - 1e-6;
+    const short = st !== null && l.track_stock !== 0 && ['sale', 'transfer', 'purchase_return'].includes(type) && l.kind === 'product' && Number(l.qty) > st + 1e-9;
+    return { c, st, cost, below, short };
+  }
+  // phone: each line is a card with its boxes under the name
+  const lineCard = (l, i) => {
+    const { c, st, cost, below, short } = lineState(l);
+    return html`<div key=${l.key} class=${`mline edit kind-${l.kind}`}>
+      <div class="ml-top">
+        <input class="input desc-input" value=${l.description} dir="auto" aria-label=${t('print.col.desc')} placeholder=${l.kind === 'labor' ? t('doc.labor_ph') : l.kind === 'text' ? t('doc.text_ph') : ''} onInput=${(e) => setLine(l.key, { description: e.target.value })} />
+        ${i > 0 && html`<${IconBtn} icon="chevron-up" title=${t('common.move_up')} onClick=${() => moveLine(l.key, -1)} />`}
+        <${IconBtn} icon="x" danger title=${t('common.remove')} onClick=${() => removeLine(l.key)} />
+      </div>
+      <div class="ml-meta row gap-8 wrap">
+        ${l.code && html`<span class="ltr">${l.code}</span>`}
+        ${l.kind === 'labor' && html`<${Pill} kind="info">${t('doc.kind.labor')}</${Pill}>`}
+        ${l.kind === 'service' && html`<${Pill} kind="info">${t('product.type.service')}</${Pill}>`}
+        ${st !== null && l.track_stock !== 0 && l.kind === 'product' && html`<span class=${short ? 'neg strong' : ''}>${t('doc.in_stock', { n: fqty(st) })}</span>`}
+        ${l.max_qty != null && html`<span>${t('doc.returnable', { n: fqty(l.max_qty) })}</span>`}
+        ${cost !== null && showPrices && html`<span>${t('doc.cost_short')}: ${money(cost * docRate, d.currency)}</span>`}
+        ${below && html`<span class="neg strong"><${Icon} name="triangle-alert" size="sm" /> ${t('doc.below_cost')}</span>`}
+      </div>
+      ${(l.kind === 'labor' || (type === 'service' && l.kind !== 'text')) && html`<div class="mt-8"><${StaffSelect} size="sm" value=${l.staff_id} onValue=${(v) => setLine(l.key, { staff_id: v })} placeholder=${t('doc.who_did')} /></div>`}
+      ${l.kind !== 'text' && html`<div class="ml-boxes">
+        <label><span>${t('print.col.qty')}${l.unit ? ` (${dn(l.unit)})` : ''}</span><${NumInput} size="sm" value=${l.qty} onValue=${(v) => setLine(l.key, { qty: v ?? 0 })} dec=${3} cls=${short ? 'invalid' : ''} /></label>
+        ${showPrices && html`<label><span>${t(isPurchaseSide(type) ? 'doc.unit_cost_price' : 'print.col.price')}</span><${NumInput} size="sm" value=${l.unit_price} onValue=${(v) => setLine(l.key, { unit_price: v ?? 0 })} dec=${Math.max(dec, 2)} cls=${below ? 'invalid' : ''} /></label>
+          <label><span>${t('print.col.discount')}</span><${DiscountInput} amount=${l.discount} pct=${l.discount_pct} dec=${dec} onChange=${(a, p) => setLine(l.key, { discount: a, discount_pct: p })} /></label>`}
+        ${type === 'adjust' && showCost && Number(l.qty) > 0 && html`<label><span>${t('doc.unit_cost_usd')}</span><${NumInput} size="sm" value=${l.unit_cost_usd} onValue=${(v) => setLine(l.key, { unit_cost_usd: v })} dec=${4} placeholder=${t('doc.cost_auto')} /></label>`}
+      </div>`}
+      ${showPrices && l.kind !== 'text' && html`<div class="ml-sum"><span class="muted">${t('print.col.total')}</span><b class="num">${money(c.total, d.currency)}</b></div>`}
+    </div>`;
+  };
 
   return html`<div class="page stack">
     ${d.ref_no && html`<${Notice} icon="link">${t('doc.based_on', { no: d.ref_no })}</${Notice}>`}
@@ -751,19 +818,14 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
           <${Btn} icon="list-checks" onClick=${() => openProductList()} title=${t('picker.all_list')}>${t('picker.open')}</${Btn}>
         </div>
       </div>
-      ${!d.lines.length ? html`<${Empty} icon="package-search" title=${t('doc.no_lines')} text=${t('doc.no_lines_hint')} />` : html`<div class="table-wrap"><table class="tbl lines-tbl">
+      ${!d.lines.length ? html`<${Empty} icon="package-search" title=${t('doc.no_lines')} text=${t('doc.no_lines_hint')} />` : phone ? html`<div class="mlines">${d.lines.map(lineCard)}</div>` : html`<div class="table-wrap"><table class="tbl lines-tbl">
         <thead><tr><th class="col-no">#</th><th>${t('print.col.desc')}</th>
           <th class="col-qty r">${t('print.col.qty')}</th>
           ${showPrices && html`<th class="col-price r">${t(isPurchaseSide(type) ? 'doc.unit_cost_price' : 'print.col.price')}</th><th class="col-disc r">${t('print.col.discount')}</th><th class="col-total r">${t('print.col.total')}</th>`}
           ${type === 'adjust' && showCost && html`<th class="col-price r">${t('doc.unit_cost_usd')}</th>`}
           <th class="col-x"></th></tr></thead>
         <tbody>${d.lines.map((l, i) => {
-          const c = lineCalc(l, dec);
-          const st = l.product_id ? stockOf(l) : null;
-          const cost = l.product_id && showCost ? costOf(l) : null;
-          const netUnit = l.qty ? (c.total * (calc.sum ? calc.total / calc.sum : 1)) / l.qty : 0;
-          const below = cost && type === 'sale' && l.kind === 'product' && netUnit < cost * docRate - 1e-6;
-          const short = st !== null && l.track_stock !== 0 && ['sale', 'transfer', 'purchase_return'].includes(type) && l.kind === 'product' && Number(l.qty) > st + 1e-9;
+          const { c, st, cost, below, short } = lineState(l);
           return html`<tr key=${l.key} class=${`kind-${l.kind}`}>
             <td class="col-no">${i + 1}</td>
             <td>
@@ -829,8 +891,8 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
     <div class="editor-bar">
       <${Btn} onClick=${cancelEdit}>${t('common.cancel')}</${Btn}>
       <div class="grow small muted">${showPrices && html`${t('doc.lines_n', { n: d.lines.filter((l) => l.kind !== 'text').length })} · <b class="num" style="color:var(--ink)">${money(calc.total, d.currency)}</b>`}</div>
-      ${def.posting && (!d.id || d.status === 'draft') && html`<${Btn} icon="save" disabled=${busy} onClick=${() => save({ post: false })}>${t('doc.save_draft')}</${Btn}>`}
-      <${Btn} icon="printer" disabled=${busy} onClick=${() => save({ post: true, print: true })}>${t('doc.save_print')}</${Btn}>
+      ${def.posting && (!d.id || d.status === 'draft') && html`<${Btn} icon="save" disabled=${busy} onClick=${() => save({ post: false })} iconOnly=${phone} title=${t('doc.save_draft')}>${phone ? null : t('doc.save_draft')}</${Btn}>`}
+      <${Btn} icon="printer" disabled=${busy} onClick=${() => save({ post: true, print: true })} iconOnly=${phone} title=${t('doc.save_print')}>${phone ? null : t('doc.save_print')}</${Btn}>
       <${Btn} kind="primary" icon="check" disabled=${busy} onClick=${() => save({ post: true })} kbd="F9">${d.id && d.status === 'posted' ? t('doc.update') : def.posting ? t('doc.save_post') : t('common.save')}</${Btn}>
     </div>
   </div>`;

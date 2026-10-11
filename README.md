@@ -1,6 +1,6 @@
 # Recep Muhasebe 3
 
-Şêrwan Car Detailing için muhasebe, stok, hızlı satış, servis ve kasa programı. Windows'ta çalışır; aynı ağdaki diğer bilgisayarlar ve telefonlar tarayıcıdan bağlanabilir.
+Şêrwan Car Detailing için muhasebe, stok, hızlı satış, servis ve kasa programı. Windows'ta çalışır; aynı ağdaki diğer bilgisayarlar tarayıcıdan bağlanabilir. Telefon uygulaması (Android ve iPhone) dükkânda ve dışarıda aynı programa bağlanır (Adım 9).
 
 Bu rehber programı GitHub'a yüklemek, kurulum dosyasını almak ve eski kayıtları taşımak için adım adım yazıldı. Toplam süre yaklaşık 30 dakika.
 
@@ -13,11 +13,12 @@ Bu rehber programı GitHub'a yüklemek, kurulum dosyasını almak ve eski kayıt
 - **Döviz bozdurma** kurlu transfer olarak kaydedilir; her belge kendi kurunu saklar.
 - Hızlı satış ekranı, teklif, iş emri (servis), iade, alış, sipariş, sayım, depo transferi, gelir-gider ve raporlar.
 - Her gün otomatik yedek, güncellemeden önce de yedek.
-- **Ağ modu:** dükkândaki diğer bilgisayarlar ve telefonlar tarayıcıdan bağlanır.
+- **Ağ modu:** dükkândaki diğer bilgisayarlar tarayıcıdan bağlanır.
+- **Telefon uygulaması (3.1):** aynı program telefonda; alt menü, kartlı listeler, telefona göre hızlı satış ve fatura ekranları, kamerayla barkod okuma. Dışarıdan da çalışır (Tailscale ile, ücretsiz).
 - 4 dil: Türkçe, Kurdî (Badînî), العربية, English.
 - Kullanıcılar ve yetkiler, PIN ile giriş, hatalı PIN denemelerinde bekletme.
 
-Bu sürüme dahil olmayanlar: ayrı telefon uygulaması ve internetsiz eşitleme. Telefonlar dükkânın Wi‑Fi'sinde tarayıcıdan kullanılabilir (Adım 8).
+Bu sürüme dahil olmayan: internetsiz çalışma. Telefon uygulaması dükkândaki bilgisayara bağlanarak çalışır; bilgisayar açık ve program çalışıyor olmalı.
 
 ---
 
@@ -48,7 +49,7 @@ Depo sayfasında eski `index.html` dosyasına tıklayın → sağ üstteki **⋯
 
 ## Adım 3 — Yeni dosyaları yükleyin (iki seferde)
 
-GitHub'ın sayfası bir seferde en fazla 100 dosya kabul ediyor, bu proje 109 dosya. Bu yüzden iki seferde yüklüyoruz.
+GitHub'ın sayfası bir seferde en fazla 100 dosya kabul ediyor, bu proje 100'den fazla dosya. Bu yüzden iki seferde yüklüyoruz.
 
 1. `recep-muhasebe-3.0.0.zip` dosyasına sağ tıklayın → **Tümünü ayıkla**. İçinden `recep-muhasebe` klasörü çıkar.
 2. **Birinci yükleme:** depo sayfasında **Add file** → **Upload files** (yeni ve boş bir depoda bunun yerine **uploading an existing file** bağlantısı görünür). Bilgisayarda `recep-muhasebe` klasörünü açın, yalnızca **ui** klasörünü sürükleyip sayfaya bırakın. Yükleme bitince alttaki **Commit changes** düğmesine basın.
@@ -102,17 +103,41 @@ Eski dosyalarınız hiç değiştirilmez; yeni program kendi veritabanını kull
 - **Kullanıcılar → Yeni kullanıcı:** çalışanları ekleyin; her birine rol (ör. Satış Personeli), PIN ve indirim sınırı verin.
 - **Ayarlar → Yedekleme → Ek yedek klasörü:** bir USB bellek veya OneDrive klasörü seçin; günlük yedeğin bir kopyası oraya da gider.
 
-## Adım 8 — Diğer bilgisayarlar ve telefonlar (isteğe bağlı)
+## Adım 8 — Diğer bilgisayarlar (isteğe bağlı)
 
 1. Ana bilgisayarda **Ayarlar → Ağ (diğer cihazlar)** → **Ağdaki diğer cihazların bağlanmasına izin ver** → program yeniden başlar.
 2. Windows Güvenlik Duvarı sorarsa **Erişime izin ver** deyin.
-3. Aynı sayfada bir adres ve QR kod görünür, ör. `http://192.168.1.20:8642`. Diğer bilgisayarda Chrome'a bu adresi yazın; telefonda QR kodu okutun.
+3. Aynı sayfada bir adres ve QR kod görünür, ör. `http://192.168.1.20:8642`. Diğer bilgisayarda Chrome'a bu adresi yazın.
 4. Her kullanıcının PIN'i veya şifresi olmalı. Şifresiz giriş yalnızca ana bilgisayardan yapılabilir.
 5. Ana bilgisayar açık olduğu sürece diğerleri çalışır; bütün veriler ana bilgisayarda durur.
 
 Bağlanamıyorsa: Windows'ta **Ayarlar → Ağ ve İnternet → Wi‑Fi** → bağlı olduğunuz ağ → **Özel ağ** seçili olmalı.
 
 Güvenlik: bir kullanıcı 5 kez yanlış PIN girerse 30 saniye bekletilir; tekrarlanırsa süre uzar (en çok 30 dakika). Yönetici **Kullanıcılar** sayfasında o kişiyi açıp **Kilidi aç** ile hemen açabilir.
+
+Telefonlar için Adım 9'daki telefon uygulamasını kullanın: kamera ve ana ekrana ekleme yalnızca o güvenli adresle çalışır.
+
+## Adım 9 — Telefon uygulaması (dükkânda ve dışarıda)
+
+Telefon, dükkândaki bilgisayara ücretsiz **Tailscale** ağı üzerinden bağlanır. Yalnızca sizin hesabınızdaki cihazlar girebilir; program internete açılmaz. Telefondan çalışırken dükkândaki bilgisayar açık ve program çalışıyor olmalı.
+
+**Dükkândaki bilgisayarda (bir kez):**
+1. **Ayarlar → Telefon uygulaması** sayfasını açın. Sayfa her adımın durumunu gösterir.
+2. **Tailscale'i indir** ile Tailscale'i kurun. Saatin yanındaki Tailscale simgesinden **Log in** ile bir Google hesabıyla giriş yapın.
+3. **Telefon erişimini aç** düğmesine basın. Tailscale ilk seferde bir onay sayfası açabilir: o sayfada onaylayın (HTTPS / Serve). Onaydan sonra sayfada `https://…ts.net` ile biten adres ve bir QR kod görünür.
+4. Telefondan girecek her kullanıcının PIN'i olmalı. Sizin PIN'iniz yoksa aynı sayfadaki **Kendime PIN koy** düğmesini kullanın.
+
+**Telefonda:**
+1. Google Play'den (Android) veya App Store'dan (iPhone) **Tailscale**'i kurun. Bilgisayardaki **aynı hesapla** giriş yapın ve bağlantıyı açın.
+2. Telefonun kamerasıyla bilgisayardaki QR kodu okutun (veya adresi tarayıcıya yazın) ve PIN'inizle girin.
+3. Ana ekrana ekleyin:
+   - **Android:** Chrome menüsü (⋮) → **Uygulamayı yükle** (veya programdaki **Menü → Telefona yükle**).
+   - **iPhone:** Safari'de **Paylaş** düğmesi → **Ana Ekrana Ekle**.
+4. Artık **Recep** simgesiyle uygulama gibi açılır. Program bilgisayarda güncellenince telefon da kendiliğinden güncellenir.
+
+**Telefonda neler var:** bütün ekranlar (satış, fatura, ürün, stok, cari, kasa, rapor, ayar). Alt menüde Panel, Satış, Faturalar, Ürünler ve Menü bulunur. Hızlı satışta ve faturada kamera düğmesiyle barkod okutulur; hızlı satışta her okutulan ürün sepete eklenir. Stok sayımında da kamerayla sayım yapılır. Yazdır düğmesi belgeyi telefonun yazdırma penceresinde açar (yazıcı veya PDF olarak kaydet).
+
+**Güvenlik:** bir telefonu kaybederseniz login.tailscale.com sayfasından o cihazı silin ve Kullanıcılar ekranından o kullanıcının PIN'ini değiştirin. Telefondan PIN'siz giriş yapılamaz.
 
 ---
 
@@ -141,6 +166,9 @@ Elle kontrol için: **Ayarlar → Hakkında → Güncellemeleri denetle**.
 - **Yeşil tik var ama .exe yok:** Releases sayfasını yenileyin (F5). Hâlâ yoksa yeni bir numarayla tekrar yayınlayın.
 - **Yönetici PIN'i unutuldu:** programı kapatın. Windows'ta **Win + R** tuşlarına basın, `%APPDATA%\Recep Muhasebe\data` yazıp Enter'a basın. Açılan klasörde sağ tık → **Yeni → Metin Belgesi**, adını `SIFRE-SIFIRLA` yapın. Programı açın: yönetici bu bilgisayardan PIN'siz girer, sonra **Kullanıcılar** sayfasından kendine yeni PIN verir. Çalışanların PIN'ini yönetici her zaman Kullanıcılar sayfasından değiştirebilir.
 - **Program açılmıyor:** bilgisayarı yeniden başlatın. Yine açılmazsa çıkan hata penceresinin fotoğrafını gönderin.
+- **Telefonda "Dükkândaki bilgisayara ulaşılamıyor":** bilgisayar açık ve program çalışıyor mu, telefonda Tailscale "Connected" mı bakın. Bilgisayar açılınca telefondaki sayfa kendiliğinden programa geçer.
+- **Telefonda kamera açılmıyor:** telefonun ayarlarından uygulamaya (Android'de Chrome'a, iPhone'da Safari'ye) kamera izni verin.
+- **Telefonda giriş yapılamıyor, "PIN'i yok" yazıyor:** bilgisayarda o kullanıcıya PIN verin (Kullanıcılar ekranı).
 
 ---
 
@@ -149,3 +177,4 @@ Elle kontrol için: **Ayarlar → Hakkında → Güncellemeleri denetle**.
 - `npm install`, sonra `npm start` (masaüstü), `npm run server` (yalnızca sunucu: http://127.0.0.1:8642) veya `npm test`.
 - `main.js` masaüstü kabuğu (Electron); `server/` veritabanı (node:sqlite) ve API; `ui/` ekranlar (Preact + htm, derleme adımı yok); `desktop/olddata.js` eski programın kayıtlarını salt okunur bir kopyadan okur.
 - `v` ile başlayan bir etiket gönderildiğinde `.github/workflows/build-release.yml` Windows kurulum dosyasını derleyip Releases'e yükler; depo adı ve sürüm numarası derleme sırasında otomatik ayarlanır.
+- Telefon uygulaması aynı arayüzdür (PWA): `ui/manifest.webmanifest`, `ui/sw.js` (yalnızca "ulaşılamıyor" sayfasını saklar, veri saklamaz), 760 px altı telefon görünümü (`usePhone`), `ui/js/core/scanner.js` (BarcodeDetector, yoksa `ui/vendor/zxing.min.js`), `ui/printview.html` (telefonda yazdırma). Bağlantı: `desktop/tailscale.js` → `tailscale serve --bg --yes http://127.0.0.1:PORT`; sunucu `*.ts.net` adını kabul eder ve 127.0.0.1'den gelen vekil isteklerini (X-Forwarded-For) telefonun adresiyle sayar, PIN'siz girişe izin vermez.

@@ -14,7 +14,7 @@ import {
 } from '../core/ui.js';
 import { wrapHtml, printHtml } from '../core/print.js';
 import { invoiceBody, buildTokens, renderLayoutBlock, defaultHeaderLayout, TOKEN_LIST, defaultTemplate, sherwanTemplate, receiptBody, RECEIPT_CSS, absUrl } from '../core/invoice.js';
-import { RateDialog } from '../app.js';
+import { RateDialog, ChangeSecretDialog } from '../app.js';
 import { PartnerPicker, PriceListSelect, WarehouseSelect, CurrencySelect } from './pickers.js';
 import { clearModelCache } from './products.js';
 import { dn } from '../core/names.js';
@@ -24,13 +24,15 @@ const SECTIONS = [
   ['company', 'store', 'settings.manage'], ['invoice', 'file-text', 'settings.manage'], ['pos', 'shopping-cart', 'settings.manage'],
   ['currencies', 'coins', 'settings.manage'], ['stock', 'boxes', 'settings.manage'], ['pricelists', 'tag', 'settings.manage'],
   ['catalog', 'layout-grid', 'settings.manage'], ['numbering', 'hash', 'settings.manage'], ['labels', 'scan-barcode', 'settings.manage'],
-  ['backup', 'database', 'backup.manage'], ['network', 'wifi', 'settings.manage'], ['security', 'shield', 'settings.manage'],
+  ['backup', 'database', 'backup.manage'], ['network', 'wifi', 'settings.manage'], ['phone', 'smartphone', 'settings.manage'], ['security', 'shield', 'settings.manage'],
   ['general', 'sliders-horizontal', 'settings.manage'], ['about', 'info', 'settings.manage'],
 ];
+// the phone app is switched on at the shop computer itself (the desktop program)
+const hasPhoneSetup = () => !!(window.desktop && window.desktop.phoneStatus);
 
 export function Settings({ tab }) {
   useTitle(t('nav.settings'));
-  const allowed = SECTIONS.filter(([, , p]) => can(p));
+  const allowed = SECTIONS.filter(([k, , p]) => can(p) && (k !== 'phone' || hasPhoneSetup()));
   const cur = allowed.some(([k]) => k === tab) ? tab : (allowed[0] || [])[0];
   return html`<div class="page settings-layout">
     <nav class="settings-nav">${allowed.map(([k, icon]) => html`<button type="button" class=${cur === k ? 'on' : ''} onClick=${() => navigate(`/settings/${k}`)}><${Icon} name=${icon} size="sm" />${t(`settings.${k}`)}</button>`)}</nav>
@@ -46,6 +48,7 @@ export function Settings({ tab }) {
       ${cur === 'labels' && html`<${LabelSettings} />`}
       ${cur === 'backup' && html`<${BackupSettings} />`}
       ${cur === 'network' && html`<${NetworkSettings} />`}
+      ${cur === 'phone' && html`<${PhoneSettings} />`}
       ${cur === 'security' && html`<${SecuritySettings} />`}
       ${cur === 'general' && html`<${GeneralSettings} />`}
       ${cur === 'about' && html`<${AboutSettings} />`}
@@ -699,6 +702,106 @@ function NetworkSettings() {
       { key: 'agent', label: t('settings.device'), render: (s) => html`<span class="small muted" title=${s.agent || ''}>${deviceName(s.agent)}</span>` },
       { key: 'seen', label: t('settings.last_seen'), render: (s) => html`<span class="small">${dateTime(s.last_seen)}</span>` },
     ]} /></${Panel}>`}
+  </div>`;
+}
+
+/* ------------------------------------------------------------------ phone app */
+/*
+ * Step by step: Tailscale on this computer, switch the phone address on, Tailscale on the phone, open the
+ * address there and add it to the home screen. Tailscale's own state is read again every few seconds while a
+ * step is waiting (installing, signing in, the one-time approval on the Tailscale website).
+ */
+function PhoneSettings() {
+  const [st, setSt] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [approve, setApprove] = useState(null);
+  const [err, setErr] = useState('');
+  const me = useStore((s) => s.user) || {};
+  const load = () => window.desktop.phoneStatus().then((r) => { setSt(r); return r; }).catch((e) => setErr(e.message || String(e)));
+  useEffect(() => { load(); }, []);
+  const waiting = !st || !st.installed || !st.running || !!approve || (st.wanted && !st.on);
+  useEffect(() => {
+    if (!waiting) return undefined;
+    const tm = setInterval(load, 4000);
+    return () => clearInterval(tm);
+  }, [waiting]);
+  useEffect(() => { if (st && st.on) setApprove(null); }, [st && st.on]);
+  const ext = (u) => (window.desktop.openExternal ? window.desktop.openExternal(u) : window.open(u, '_blank', 'noopener'));
+  const enable = async () => {
+    setBusy(true); setErr(''); setApprove(null);
+    try {
+      const r = await window.desktop.phoneEnable();
+      if (r.approve) { setApprove(r.approve); ext(r.approve); } else if (!r.ok) setErr(r.error === 'not_installed' ? t('phone.not_installed') : r.error || t('err.generic'));
+      else toast(t('phone.on_ok'));
+      await load();
+    } finally { setBusy(false); }
+  };
+  const disable = async () => {
+    if (!(await confirmDialog({ title: t('phone.turn_off'), text: t('phone.turn_off_text'), okText: t('phone.turn_off'), danger: true }))) return;
+    setBusy(true); setErr('');
+    try { const r = await window.desktop.phoneDisable(); if (!r.ok) setErr(r.error || t('err.generic')); await load(); } finally { setBusy(false); }
+  };
+  const copy = async (text) => { try { await navigator.clipboard.writeText(text); toast(t('phone.copied')); } catch (e) { /* not allowed */ } };
+  if (!st) return html`<${Panel} title=${t('settings.phone')} icon="smartphone">${err ? html`<${Notice} kind="err">${err}</${Notice}>` : html`<${Loading} />`}</${Panel}>`;
+  const step1 = st.installed && st.running;
+  const step2 = step1 && st.on;
+  const noPin = !me.has_pin && !me.has_password;
+  const stepCls = (done, active) => `phone-step ${done ? 'done' : active ? 'active' : ''}`;
+  const stepNo = (n, done) => html`<span class="ps-num">${done ? html`<${Icon} name="check" size="sm" />` : n}</span>`;
+  return html`<div class="stack">
+    <${Panel} title=${t('settings.phone')} icon="smartphone" tools=${html`<${Btn} size="sm" kind="ghost" icon="refresh-cw" onClick=${load} disabled=${busy}>${t('phone.refresh')}</${Btn}>`}>
+      <p class="dim" style="max-width:72ch">${t('phone.intro')}</p>
+      <ol class="phone-steps">
+        <li class=${stepCls(step1, !step1)}>
+          <div class="ps-head">${stepNo(1, step1)}<b>${t('phone.s1')}</b></div>
+          <div class="ps-body">
+            ${!st.installed ? html`<p class="small">${t('phone.s1_missing')}</p><${Btn} icon="download" onClick=${() => ext('https://tailscale.com/download/windows')}>${t('phone.download_pc')}</${Btn}>`
+              : !st.running ? html`<p class="small">${t('phone.s1_login')}</p>${st.state ? html`<p class="tiny muted">Tailscale: ${st.state}</p>` : null}`
+                : html`<p class="small pos">${t('phone.s1_ok', { account: st.account || '—' })}</p>`}
+          </div>
+        </li>
+        <li class=${stepCls(step2, step1 && !step2)}>
+          <div class="ps-head">${stepNo(2, step2)}<b>${t('phone.s2')}</b></div>
+          <div class="ps-body">
+            ${!step1 ? html`<p class="small muted">${t('phone.s2_wait')}</p>` : step2 ? html`<div class="row top gap-16 wrap">
+                <${QrCode} text=${`${st.url}/`} size=${4} />
+                <div class="col gap-8" style="min-width:0">
+                  <p class="small pos" style="margin:0">${t('phone.s2_ok')}</p>
+                  <div class="phone-url ltr">${st.url}</div>
+                  <div class="row gap-8 wrap"><${Btn} size="sm" icon="copy" onClick=${() => copy(st.url)}>${t('phone.copy')}</${Btn}>
+                    <${Btn} size="sm" kind="ghost" icon="power" onClick=${disable} disabled=${busy}>${t('phone.turn_off')}</${Btn}></div>
+                </div>
+              </div>`
+              : html`<p class="small">${t('phone.s2_text')}</p>
+                ${st.other && html`<${Notice} kind="warn">${t('phone.s2_other')}</${Notice}>`}
+                <div class="row gap-8 wrap mt-8"><${Btn} kind="primary" icon="smartphone" onClick=${enable} disabled=${busy}>${busy ? t('phone.turning_on') : t('phone.turn_on')}</${Btn}></div>`}
+            ${approve && !step2 && html`<${Notice} kind="warn" cls="mt-12"><div>${t('phone.approve_text')}</div>
+              <div class="mt-8"><${Btn} size="sm" icon="external-link" onClick=${() => ext(approve)}>${t('phone.approve_open')}</${Btn}></div></${Notice}>`}
+            ${st.funnel && html`<${Notice} kind="err" cls="mt-12">${t('phone.funnel_warning')}</${Notice}>`}
+          </div>
+        </li>
+        <li class=${stepCls(false, step2)}>
+          <div class="ps-head">${stepNo(3, false)}<b>${t('phone.s3')}</b></div>
+          <div class="ps-body"><p class="small">${t('phone.s3_text', { account: st.account || '—' })}</p>
+            <div class="row gap-8 wrap"><${Btn} size="sm" icon="external-link" onClick=${() => ext('https://tailscale.com/download')}>${t('phone.download_phone')}</${Btn}></div></div>
+        </li>
+        <li class=${stepCls(false, step2)}>
+          <div class="ps-head">${stepNo(4, false)}<b>${t('phone.s4')}</b></div>
+          <div class="ps-body">
+            <p class="small">${t('phone.s4_text')}</p>
+            <ul class="small phone-os">
+              <li><b>Android:</b> ${t('phone.s4_android')}</li>
+              <li><b>iPhone:</b> ${t('phone.s4_iphone')}</li>
+            </ul>
+            ${noPin ? html`<${Notice} kind="warn"><div>${t('phone.no_pin')}</div>
+                <div class="mt-8"><${Btn} size="sm" icon="key-round" onClick=${() => openModal(ChangeSecretDialog).then((ok) => ok && refreshBoot())}>${t('phone.set_pin')}</${Btn}></div></${Notice}>`
+              : html`<p class="small muted">${t('phone.pin_note')}</p>`}
+          </div>
+        </li>
+      </ol>
+      ${err && html`<${Notice} kind="err" cls="mt-12"><div style="white-space:pre-line">${err}</div></${Notice}>`}
+    </${Panel}>
+    <${Panel} title=${t('phone.safety')} icon="shield-check"><p class="small dim" style="margin:0;max-width:72ch">${t('phone.safety_text')}</p></${Panel}>
   </div>`;
 }
 

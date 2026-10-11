@@ -10,7 +10,9 @@ import { refreshBoot } from '../core/session.js';
 import { money, num, convert, today, date as fdate, dateTime, round, decimals, usdIqd } from '../core/format.js';
 import {
   Icon, Btn, IconBtn, Modal, Field, Input, NumInput, Select, Segmented, Check, Table, Panel, Empty, Loading, Notice, Pill, Money, KV, Tabs,
-  DateRange, periodRange, SearchBox, MenuButton, useAsync, useDebounced, openModal, toast, errToast, confirmDialog, promptDialog, DateInput } from '../core/ui.js';
+  DateRange, periodRange, SearchBox, MenuButton, useAsync, useDebounced, openModal, toast, errToast, confirmDialog, promptDialog, DateInput,
+  Filters, usePhone,
+} from '../core/ui.js';
 import { printTables } from '../core/print.js';
 import { downloadXlsx } from '../core/xlsx.js';
 import { CurrencySelect, accountOptions } from './pickers.js';
@@ -215,13 +217,13 @@ export function Cash({ query = {} }) {
       ${accs.some((a) => a.active && a.type === 'cash' && a.balance < 0) && html`<${Notice} kind="warn">${t('cash.negative_warning')}</${Notice}>`}
       <div class="panel">${loading && !data ? html`<${Loading} />` : html`<${Table} rows=${accs} onRow=${(a) => navigate(`/cash/${a.id}`)} rowCls=${(a) => (a.active ? '' : 'cancelled')}
         columns=${[
-          { key: 'name', label: t('common.name'), render: (a) => html`<div class="row gap-8"><${Icon} name=${TYPE_ICON[a.type] || 'wallet'} cls="muted" /><div><div class="cell-name">${a.name}${a.is_default ? html` <${Pill} kind="brass">${t('common.default')}</${Pill}>` : null}</div>${a.bank_name ? html`<div class="sub">${a.bank_name}${a.account_no ? ` · ${a.account_no}` : ''}</div>` : null}</div></div>` },
-          { key: 'type', label: t('common.type'), render: (a) => t(`cash.type.${a.type}`) },
-          { key: 'cur', label: t('common.currency'), render: (a) => a.currency },
-          { key: 'bal', label: t('partner.balance'), align: 'r', render: (a) => html`<${Money} value=${a.balance} cur=${a.currency} strong cls=${a.balance < 0 ? 'neg' : ''} />` },
-          { key: 'last', label: t('cash.last_move'), render: (a) => html`<span class="small muted">${a.last_move ? fdate(a.last_move) : ''}</span>` },
-          { key: 'count', label: t('cash.last_count'), render: (a) => (a.last_count ? html`<span class="small">${fdate(a.last_count.date)}</span> ${a.last_count.diff ? html`<span class=${`small num ${a.last_count.diff < 0 ? 'neg' : 'pos'}`}>${money(a.last_count.diff, a.currency, { sign: true })}</span>` : html`<${Icon} name="check" size="sm" cls="pos" />`}` : html`<span class="small muted">—</span>`) },
-          { key: 'act', label: '', cls: 'w-actions', render: (a) => a.active && canManage(a.type) && html`<${MenuButton} iconOnly icon="ellipsis" title=${t('common.more')} items=${[
+          { key: 'name', label: t('common.name'), mobile: 'title', render: (a) => html`<div class="row gap-8"><${Icon} name=${TYPE_ICON[a.type] || 'wallet'} cls="muted" /><div><div class="cell-name">${a.name}${a.is_default ? html` <${Pill} kind="brass">${t('common.default')}</${Pill}>` : null}</div>${a.bank_name ? html`<div class="sub">${a.bank_name}${a.account_no ? ` · ${a.account_no}` : ''}</div>` : null}</div></div>` },
+          { key: 'type', label: t('common.type'), mobile: 'sub', render: (a) => t(`cash.type.${a.type}`) },
+          { key: 'cur', label: t('common.currency'), mobile: 'sub', render: (a) => a.currency },
+          { key: 'bal', label: t('partner.balance'), align: 'r', mobile: 'right', render: (a) => html`<${Money} value=${a.balance} cur=${a.currency} strong cls=${a.balance < 0 ? 'neg' : ''} />` },
+          { key: 'last', label: t('cash.last_move'), mobile: 'subright', render: (a) => html`<span class="small muted">${a.last_move ? fdate(a.last_move) : ''}</span>` },
+          { key: 'count', label: t('cash.last_count'), mobile: 'row', render: (a) => (a.last_count ? html`<span class="small">${fdate(a.last_count.date)}</span> ${a.last_count.diff ? html`<span class=${`small num ${a.last_count.diff < 0 ? 'neg' : 'pos'}`}>${money(a.last_count.diff, a.currency, { sign: true })}</span>` : html`<${Icon} name="check" size="sm" cls="pos" />`}` : html`<span class="small muted">—</span>`) },
+          { key: 'act', label: '', cls: 'w-actions', mobile: 'actions', render: (a) => a.active && canManage(a.type) && html`<${MenuButton} iconOnly icon="ellipsis" title=${t('common.more')} items=${[
             a.type === 'cash' && can('cash.manage') && { label: t('cash.count'), icon: 'calculator', onClick: () => after(openModal(CountDialog, { account: a })) },
             { label: t('cash.transfer_exchange'), icon: 'arrow-left-right', onClick: () => after(openModal(TransferDialog, { from: a.id })) },
             { label: t('cash.manual'), icon: 'pencil', onClick: () => after(openModal(ManualDialog, { account: a })) },
@@ -249,15 +251,15 @@ function Transfers() {
     <div class="panel">${loading && !data ? html`<${Loading} />` : html`<${Table} rows=${data || []} rowCls=${(r) => (r.status === 'cancelled' ? 'cancelled' : '')}
       empty=${html`<${Empty} icon="arrow-left-right" title=${t('cash.no_transfers')} />`}
       columns=${[
-        { key: 'no', label: t('doc.no'), render: (r) => html`<span class="strong">${r.no}</span>` },
-        { key: 'date', label: t('common.date'), render: (r) => fdate(r.date) },
-        { key: 'kind', label: t('common.type'), render: (r) => html`<${Pill} kind=${r.kind === 'exchange' ? 'brass' : ''}>${t(`cash.kind.${r.kind}`)}</${Pill}>` },
-        { key: 'from', label: t('cash.from_account'), render: (r) => html`${r.from_name}<div class="sub num">−${money(r.from_amount, r.from_currency)}</div>` },
-        { key: 'to', label: t('cash.to_account'), render: (r) => html`${r.to_name}<div class="sub num">+${money(r.to_amount, r.to_currency)}</div>` },
-        { key: 'rate', label: t('rate.short'), align: 'r', render: (r) => (r.kind === 'exchange' ? html`<span class="num small">${num(r.usd_iqd, 2)}</span>` : '') },
-        { key: 'fee', label: t('cash.fee'), align: 'r', render: (r) => (r.fee ? html`<span class="num small neg">${money(r.fee, r.from_currency)}</span>` : '') },
-        { key: 'desc', label: t('common.description'), render: (r) => html`<span class="small" dir="auto">${r.description || ''}</span><div class="sub">${r.user_name || ''}</div>` },
-        { key: 'act', label: '', cls: 'w-actions', render: (r) => r.status === 'posted' && can(['cash.manage', 'bank.manage']) && html`<${IconBtn} icon="ban" danger title=${t('common.cancel_doc')} onClick=${() => cancel(r)} />` },
+        { key: 'no', label: t('doc.no'), mobile: 'title', render: (r) => html`<span class="strong">${r.no}</span>` },
+        { key: 'date', label: t('common.date'), mobile: 'sub', render: (r) => fdate(r.date) },
+        { key: 'kind', label: t('common.type'), mobile: 'subright', render: (r) => html`<${Pill} kind=${r.kind === 'exchange' ? 'brass' : ''}>${t(`cash.kind.${r.kind}`)}</${Pill}>` },
+        { key: 'from', label: t('cash.from_account'), mobile: 'row', render: (r) => html`${r.from_name}<div class="sub num">−${money(r.from_amount, r.from_currency)}</div>` },
+        { key: 'to', label: t('cash.to_account'), mobile: 'row', render: (r) => html`${r.to_name}<div class="sub num">+${money(r.to_amount, r.to_currency)}</div>` },
+        { key: 'rate', label: t('rate.short'), align: 'r', mobile: 'row', render: (r) => (r.kind === 'exchange' ? html`<span class="num small">${num(r.usd_iqd, 2)}</span>` : '') },
+        { key: 'fee', label: t('cash.fee'), align: 'r', mobile: 'row', render: (r) => (r.fee ? html`<span class="num small neg">${money(r.fee, r.from_currency)}</span>` : '') },
+        { key: 'desc', label: t('common.description'), mobile: 'row', render: (r) => html`<span class="small" dir="auto">${r.description || ''}</span><div class="sub">${r.user_name || ''}</div>` },
+        { key: 'act', label: '', cls: 'w-actions', mobile: 'actions', render: (r) => r.status === 'posted' && can(['cash.manage', 'bank.manage']) && html`<${IconBtn} icon="ban" danger title=${t('common.cancel_doc')} onClick=${() => cancel(r)} />` },
       ]} />`}</div>
   </div>`;
 }
@@ -267,11 +269,11 @@ function Counts() {
   return html`<div class="panel">${loading && !data ? html`<${Loading} />` : html`<${Table} rows=${data || []}
     empty=${html`<${Empty} icon="calculator" title=${t('cash.no_counts')} />`}
     columns=${[
-      { key: 'date', label: t('common.date'), render: (r) => html`${fdate(r.date)}<div class="sub">${dateTime(r.created_at)}</div>` },
-      { key: 'acc', label: t('cash.account'), render: (r) => r.account_name },
-      { key: 'sys', label: t('cash.system_balance'), align: 'r', render: (r) => html`<${Money} value=${r.system_balance} cur=${r.currency} />` },
-      { key: 'cnt', label: t('cash.counted'), align: 'r', render: (r) => html`<${Money} value=${r.counted} cur=${r.currency} strong />` },
-      { key: 'diff', label: t('cash.difference'), align: 'r', render: (r) => html`<${Money} value=${r.diff} cur=${r.currency} colored sign />` },
+      { key: 'date', label: t('common.date'), mobile: 'sub', render: (r) => html`${fdate(r.date)}<div class="sub">${dateTime(r.created_at)}</div>` },
+      { key: 'acc', label: t('cash.account'), mobile: 'title', render: (r) => r.account_name },
+      { key: 'sys', label: t('cash.system_balance'), align: 'r', mobile: 'row', render: (r) => html`<${Money} value=${r.system_balance} cur=${r.currency} />` },
+      { key: 'cnt', label: t('cash.counted'), align: 'r', mobile: 'right', render: (r) => html`<${Money} value=${r.counted} cur=${r.currency} strong />` },
+      { key: 'diff', label: t('cash.difference'), align: 'r', mobile: 'subright', render: (r) => html`<${Money} value=${r.diff} cur=${r.currency} colored sign />` },
       { key: 'posted', label: t('cash.posted'), render: (r) => (r.diff ? (r.posted ? html`<${Pill} kind="in">${t('common.yes')}</${Pill}>` : html`<${Pill}>${t('common.no')}</${Pill}>`) : '') },
       { key: 'user', label: t('common.user'), render: (r) => html`<span class="small">${r.user_name || ''}</span>${r.note ? html`<div class="sub" dir="auto">${r.note}</div>` : null}` },
     ]} />`}</div>`;
@@ -284,6 +286,7 @@ export function CashAccountPage({ id, query = {} }) {
   const [f, setF] = useState({ from: query.from || r0.from, to: query.to || r0.to, kind: '', q: '' });
   const dq = useDebounced(f.q, 250);
   const { data, loading, error, reload } = useAsync(() => api.get(`/api/money/accounts/${id}/statement`, { from: f.from, to: f.to, kind: f.kind, q: dq }), [id, f.from, f.to, f.kind, dq]);
+  const phone = usePhone();
   const a = data && data.account;
   useTitle(a ? a.name : t('common.loading'), [{ label: t('nav.cash'), href: '#/cash' }]);
   if (error) return html`<div class="page"><${Notice} kind="err">${error.message}</${Notice}></div>`;
@@ -312,10 +315,14 @@ export function CashAccountPage({ id, query = {} }) {
     <div class="row wrap gap-8">
       <div class="grow row gap-8"><${Icon} name=${TYPE_ICON[a.type]} /><span class="small muted">${t(`cash.type.${a.type}`)} · ${cur}${a.bank_name ? ` · ${a.bank_name}` : ''}${a.iban ? ` · ${a.iban}` : ''}</span></div>
       ${a.type === 'cash' && can('cash.manage') && html`<${Btn} icon="calculator" onClick=${() => after(openModal(CountDialog, { account: { ...a } }))}>${t('cash.count')}</${Btn}>`}
-      ${canManage(a.type) && html`<${Btn} icon="arrow-left-right" onClick=${() => after(openModal(TransferDialog, { from: a.id }))}>${t('cash.transfer_exchange')}</${Btn}>
-        <${Btn} icon="pencil" onClick=${() => after(openModal(ManualDialog, { account: a }))}>${t('cash.manual')}</${Btn}>`}
+      ${canManage(a.type) && html`<${Btn} icon="arrow-left-right" onClick=${() => after(openModal(TransferDialog, { from: a.id }))}>${t('cash.transfer_exchange')}</${Btn}>`}
+      ${phone ? html`<${MenuButton} iconOnly icon="ellipsis" title=${t('common.more')} items=${[
+        canManage(a.type) && { label: t('cash.manual'), icon: 'pencil', onClick: () => after(openModal(ManualDialog, { account: a })) },
+        { label: t('common.print'), icon: 'printer', onClick: printIt },
+        { label: t('common.export_excel'), icon: 'file-spreadsheet', onClick: exportX },
+      ]} />` : html`${canManage(a.type) && html`<${Btn} icon="pencil" onClick=${() => after(openModal(ManualDialog, { account: a }))}>${t('cash.manual')}</${Btn}>`}
       <${IconBtn} icon="printer" title=${t('common.print')} onClick=${printIt} />
-      <${IconBtn} icon="file-spreadsheet" title=${t('common.export_excel')} onClick=${exportX} />
+      <${IconBtn} icon="file-spreadsheet" title=${t('common.export_excel')} onClick=${exportX} />`}
     </div>
     <div class="grid-4">
       <div class="panel stat"><div class="k">${t('partner.opening_balance')}</div><div class="v"><${Money} value=${data.opening} cur=${cur} /></div><div class="s">${fdate(f.from)}</div></div>
@@ -324,11 +331,23 @@ export function CashAccountPage({ id, query = {} }) {
       <div class="panel stat"><div class="k">${t('cash.closing')}</div><div class="v"><${Money} value=${data.closing} cur=${cur} /></div><div class="s">${t('cash.now')}: ${money(a.balance, cur)}</div></div>
     </div>
     <div class="toolbar" style="margin:0">
+      <${Filters} active=${[f.from !== r0.from || f.to !== r0.to, f.kind].filter(Boolean).length}>
       <${DateRange} from=${f.from} to=${f.to} onChange=${(r) => setF({ ...f, ...r })} />
       <div style="width:170px"><${Select} value=${f.kind} onValue=${(v) => setF({ ...f, kind: v })} options=${[{ value: '', label: t('stock.all_kinds') }, ...MONEY_KINDS.map((k) => ({ value: k, label: t(`move.money.${k}`) }))]} /></div>
+      </${Filters}>
       <${SearchBox} value=${f.q} onValue=${(v) => setF({ ...f, q: v })} cls="search" />
     </div>
-    <div class="panel">${!rows.length ? html`<${Empty} icon="wallet" title=${t('cash.no_moves')} />` : html`<div class="table-wrap"><table class="tbl">
+    <div class="panel">${!rows.length ? html`<${Empty} icon="wallet" title=${t('cash.no_moves')} />` : phone ? html`<div class="mcards">${rows.map((r) => html`<div class=${`mcard ${r.payment_id || r.doc_id || r.entry_id ? 'clickable' : ''}`} onClick=${(e) => { if (!e.target.closest('button')) open(r); }}>
+        <div class="mc-top">
+          <div class="mc-main"><div class="mc-title">${t(`move.money.${r.kind}`)} <span class="small muted nowrap">${r.doc_no || r.payment_no || r.entry_no || r.transfer_no || ''}</span></div>
+            <div class="mc-sub"><span>${fdate(r.date)} ${(r.created_at || '').slice(11, 16)}</span>${r.description ? html`<span dir="auto">${r.description}</span>` : null}${r.category_name ? html`<span>${r.category_name}</span>` : null}${r.user_name ? html`<span>${r.user_name}</span>` : null}</div></div>
+          <div class="mc-end">
+            <div class="mc-right"><${Money} value=${Math.abs(r.amount)} cur=${cur} cls=${r.amount > 0 ? 'pos' : 'neg'} /></div>
+            <div class="mc-subr">${t('partner.balance')}: <${Money} value=${r.balance} cur=${cur} /></div>
+          </div>
+        </div>
+        ${['adjust', 'opening', 'count_diff'].includes(r.kind) && canManage(a.type) ? html`<div class="mc-actions"><${Btn} size="sm" kind="ghost" icon="ban" onClick=${() => cancelMove(r)}>${t('common.cancel_doc')}</${Btn}></div>` : null}
+      </div>`)}</div>` : html`<div class="table-wrap"><table class="tbl">
       <thead><tr><th>${t('common.date')}</th><th>${t('common.type')}</th><th>${t('common.description')}</th><th class="r">${t('cash.in')}</th><th class="r">${t('cash.out')}</th><th class="r">${t('partner.balance')}</th><th class="w-actions"></th></tr></thead>
       <tbody>${rows.map((r) => html`<tr class=${r.payment_id || r.doc_id || r.entry_id ? 'clickable' : ''} onClick=${(e) => { if (!e.target.closest('button')) open(r); }}>
         <td class="nowrap">${fdate(r.date)}<div class="sub">${(r.created_at || '').slice(11, 16)}</div></td>

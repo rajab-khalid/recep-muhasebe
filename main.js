@@ -11,6 +11,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const olddata = require('./desktop/olddata');
 const strings = require('./desktop/strings');
+const tailscale = require('./desktop/tailscale');
 
 let autoUpdater = null;
 try { ({ autoUpdater } = require('electron-updater')); } catch (e) { autoUpdater = null; }
@@ -19,6 +20,7 @@ try { ({ autoUpdater } = require('electron-updater')); } catch (e) { autoUpdater
 const PARTITION = 'persist:recep3';
 const DATA_DIR = path.join(app.getPath('userData'), 'data');
 const STATE_FILE = path.join(app.getPath('userData'), 'window-state.json');
+const PHONE_FILE = path.join(app.getPath('userData'), 'phone-access.json'); // the owner switched the phone app on
 
 let backend = null;
 let mainWin = null;
@@ -74,7 +76,14 @@ async function start() {
   registerIpc();
   createWindow();
   setupAutoUpdate();
+  // phone app switched on: the program may listen on another port than last time, point the address at it again
+  if (phoneWanted()) setTimeout(() => { tailscale.ensure(backend.port).catch(() => {}); }, 6000);
 }
+
+/* ------------------------------------------------------------------ phone app (Tailscale) */
+function phoneWanted() { try { return !!JSON.parse(fs.readFileSync(PHONE_FILE, 'utf8')).enabled; } catch (e) { return false; } }
+function setPhoneWanted(v) { try { fs.writeFileSync(PHONE_FILE, JSON.stringify({ enabled: !!v, at: new Date().toISOString() })); } catch (e) { /* ignore */ } }
+function phoneAudit(k) { try { backend.app.audit({ system: 'system' }, 'settings', 'settings', null, { k }); } catch (e) { /* ignore */ } }
 
 /* ------------------------------------------------------------------ window */
 function loadState() {
@@ -228,6 +237,19 @@ function registerIpc() {
   });
   handle('rm:relaunch', () => { relaunch(); return true; });
   handle('rm:check-updates', () => checkUpdates());
+  handle('rm:phone-status', async () => ({ ...(await tailscale.status(backend.port)), wanted: phoneWanted(), port: backend.port }));
+  handle('rm:phone-enable', async () => {
+    setPhoneWanted(true);
+    const r = await tailscale.enable(backend.port, (later) => { if (later.ok) phoneAudit('phone_on'); });
+    if (r.ok) phoneAudit('phone_on');
+    return r;
+  });
+  handle('rm:phone-disable', async () => {
+    setPhoneWanted(false);
+    const r = await tailscale.disable(backend.port);
+    if (r.ok) phoneAudit('phone_off');
+    return r;
+  });
 }
 
 /* ------------------------------------------------------------------ printing */

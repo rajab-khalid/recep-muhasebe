@@ -14,18 +14,44 @@ const registerRoutes = require('./api/routes');
 const COOKIE = 'rm_sid';
 
 /*
- * The program is opened by an address (127.0.0.1, the PC's network IP) or by this computer's own name.
- * Any other host name is refused: a web page cannot point its own domain at this computer ("DNS rebinding")
- * and use the program from a browser here.
+ * The program is opened by an address (127.0.0.1, the PC's network IP), by this computer's own name, or by
+ * its Tailscale name (pc-name.tailnet.ts.net, used by the phone app). Any other host name is refused: a web
+ * page cannot point its own domain at this computer ("DNS rebinding") and use the program from a browser here.
+ * ts.net names are safe to accept: their addresses are set by Tailscale and always point into a private
+ * Tailscale network, never at this computer's own or local network addresses.
  */
+const TS_HOST = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+\.ts\.net$/;
 function hostAllowed(hostHeader) {
   if (!hostHeader) return false;
   let h = String(hostHeader).trim().toLowerCase();
   if (h.startsWith('[')) return /^\[[0-9a-f:.]+\](:\d+)?$/.test(h); // an IPv6 address
-  h = h.replace(/:\d+$/, '');
+  h = h.replace(/:\d+$/, '').replace(/\.$/, '');
   if (h === 'localhost' || /^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return true;
+  if (TS_HOST.test(h)) return true;
   const me = os.hostname().toLowerCase();
   return h === me || h === `${me}.local`;
+}
+
+const isLoopback = (ip) => ip === '::1' || /^127\./.test(ip);
+
+/*
+ * Who is asking. Tailscale's "serve" (the phone app's secure address) runs on this computer and passes each
+ * request on from 127.0.0.1, naming the phone in X-Forwarded-For. Such a request is never treated as this
+ * computer itself: no sign-in without a PIN, and wrong PINs count against the phone's own address.
+ * Only a program on this computer can send these headers to 127.0.0.1 (web pages cannot add them to requests
+ * for another site), and Tailscale replaces whatever the phone sent with the real values.
+ */
+function clientOf(req) {
+  const peer = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+  if (!peer) return null;
+  const h = req.headers;
+  if (!isLoopback(peer)) return { ip: peer, proxied: false, https: false };
+  const host = String(h.host || '').toLowerCase().replace(/:\d+$/, '');
+  const proxied = h['x-forwarded-for'] !== undefined || h['tailscale-user-login'] !== undefined || TS_HOST.test(host.replace(/\.$/, ''));
+  if (!proxied) return { ip: peer, proxied: false, https: false };
+  let ip = String(h['x-forwarded-for'] || '').split(',')[0].trim().replace(/^\[|\]$/g, '').replace(/^::ffff:/, '');
+  if (!/^[0-9a-f:.]{2,45}$/i.test(ip) || isLoopback(ip)) ip = 'proxy';
+  return { ip, proxied: true, https: String(h['x-forwarded-proto'] || '').toLowerCase() === 'https' };
 }
 
 function startServer(opts = {}) {
@@ -46,8 +72,9 @@ function startServer(opts = {}) {
     const pathname = url.pathname;
     if (!pathname.startsWith('/api/')) return serveStatic(uiDir, req, res, pathname);
 
-    const ip = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
-    if (!ip) { req.destroy(); return undefined; } // the connection is already gone
+    const client = clientOf(req);
+    if (!client) { req.destroy(); return undefined; } // the connection is already gone
+    const { ip } = client;
     const match = router.match(req.method === 'HEAD' ? 'GET' : req.method, pathname);
     if (!match) return send(res, 404, { error: { code: 'not_found', message: 'Not found' } }, {}, req);
 
@@ -77,11 +104,12 @@ function startServer(opts = {}) {
       }
     }
     const setCookies = [];
+    const secure = client.https ? '; Secure' : ''; // the phone app's https address: the cookie never travels unencrypted
     const ctx = {
-      app, user, token, ip, req, res, params: match.params, query, body, port: actualPort,
+      app, user, token, ip, req, res, params: match.params, query, body, port: actualPort, remote: client.proxied,
       setSession(tok, remember, days) {
-        if (!tok) setCookies.push(`${COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`);
-        else setCookies.push(`${COOKIE}=${tok}; Path=/; HttpOnly; SameSite=Strict${remember ? `; Max-Age=${Math.round((days || 90) * 86400)}` : ''}`);
+        if (!tok) setCookies.push(`${COOKIE}=; Path=/; HttpOnly; SameSite=Strict${secure}; Max-Age=0`);
+        else setCookies.push(`${COOKIE}=${tok}; Path=/; HttpOnly; SameSite=Strict${secure}${remember ? `; Max-Age=${Math.round((days || 90) * 86400)}` : ''}`);
       },
       requestRestart: () => { if (opts.onRestartRequested) setTimeout(() => opts.onRestartRequested(), 300); },
     };
@@ -140,7 +168,7 @@ function startServer(opts = {}) {
   }));
 }
 
-module.exports = { startServer };
+module.exports = { startServer, hostAllowed, clientOf };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

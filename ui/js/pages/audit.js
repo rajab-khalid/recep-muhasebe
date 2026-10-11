@@ -48,6 +48,8 @@ export function auditText(r) {
     case 'login_failed': return v.wait ? (v.wait < 90 ? t('audit.msg.paused_sec', { n: v.wait }) : t('audit.msg.paused_min', { n: Math.round(v.wait / 60) })) : t('audit.msg.login_failed');
     case 'user_unlocked': return t('audit.msg.user_unlocked', v);
     case 'secret_reset': return t('audit.msg.secret_reset', v);
+    case 'phone_on': return t('audit.msg.phone_on');
+    case 'phone_off': return t('audit.msg.phone_off');
     default: return r.summary || '';
   }
 }

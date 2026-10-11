@@ -6,7 +6,7 @@ import { can, boot, useStore } from '../core/store.js';
 import { useTitle } from '../core/page.js';
 import { navigate } from '../core/router.js';
 import { money, num, qty as fqty, pct as fpct, date as fdate, dateTime, today, monthName, shortMonth, addDays, compact } from '../core/format.js';
-import { Icon, Btn, IconBtn, Field, Input, Select, Segmented, Panel, Empty, Loading, Notice, Pill, DateRange, periodRange, useAsync, DateInput } from '../core/ui.js';
+import { Icon, Btn, IconBtn, Field, Input, Select, Segmented, Panel, Empty, Loading, Notice, Pill, DateRange, periodRange, useAsync, DateInput, usePhone } from '../core/ui.js';
 import { printTables } from '../core/print.js';
 import { downloadXlsx } from '../core/xlsx.js';
 import { BarChart } from '../core/charts.js';
@@ -276,10 +276,25 @@ export function ReportPage({ name, query = {} }) {
   </div>`;
 }
 
+/** a report row on a phone: the first column as the title, the other columns as label: value pairs */
+function ReportCards({ tb }) {
+  const cell = (c) => (c && typeof c === 'object' ? c : { text: c });
+  const pairs = (r) => r.slice(1).map((c, k) => ({ h: tb.headers[k + 1] || {}, o: cell(c) })).filter((x) => x.o.text !== '' && x.o.text !== null && x.o.text !== undefined);
+  const card = (r, foot) => {
+    const first = cell(r[0]);
+    return html`<div class=${`rcard ${foot ? 'foot' : ''}`}>
+      <div class="rc-title" dir="auto">${first.href ? html`<a href=${first.href}>${first.text}</a>` : first.text}</div>
+      <div class="rc-grid">${pairs(r).map((x) => html`<div><span class="k">${x.h.label}</span><span class=${`v ${x.h.r ? 'num' : ''} ${x.o.cls || ''}`} dir=${x.h.r ? undefined : 'auto'}>${x.o.href ? html`<a href=${x.o.href}>${x.o.text}</a>` : x.o.text}</span></div>`)}</div>
+    </div>`;
+  };
+  return html`<div class="rcards">${tb.rows.map((r) => card(r))}${tb.foot && card(tb.foot, true)}</div>`;
+}
+
 function ReportTable({ tb }) {
+  const phone = usePhone();
   return html`<div class="panel">
     ${(tb.title || tb.note) && html`<div class="panel-head">${tb.title && html`<h2>${tb.title}</h2>`}${tb.note && html`<div class="tools small muted" style="white-space:normal">${tb.note}</div>`}</div>`}
-    ${!tb.rows.length ? html`<div class="panel-body small muted">${t('report.empty')}</div>` : html`<div class="table-wrap"><table class="tbl compact">
+    ${!tb.rows.length ? html`<div class="panel-body small muted">${t('report.empty')}</div>` : phone ? html`<${ReportCards} tb=${tb} />` : html`<div class="table-wrap"><table class="tbl compact">
       <thead><tr>${tb.headers.map((x) => html`<th class=${x.r ? 'r' : ''}>${x.label}</th>`)}</tr></thead>
       <tbody>${tb.rows.map((r) => html`<tr>${r.map((c, i) => {
         const o = c && typeof c === 'object' ? c : { text: c };

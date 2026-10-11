@@ -4,7 +4,8 @@ import { t } from '../core/i18n.js';
 import { api } from '../core/api.js';
 import { boot, can } from '../core/store.js';
 import { money, num, convert } from '../core/format.js';
-import { Icon, IconBtn, Combo, Select, Balances, Pill, openModal, errToast, Modal, Btn, NumInput, Check, Loading, Empty, useAsync, useDebounced } from '../core/ui.js';
+import { Icon, IconBtn, Combo, Select, Balances, Pill, openModal, errToast, toast, Modal, Btn, NumInput, Check, Loading, Empty, useAsync, useDebounced, isPhone, usePhone } from '../core/ui.js';
+import { ScanButton, canScan } from '../core/scanner.js';
 import { PartnerDialog } from './partners.js';
 import { VehicleDialog } from './vehicles.js';
 import { dn } from '../core/names.js';
@@ -91,7 +92,7 @@ export function ProductSearch({ onPick, priceListId, warehouseId, currency, usdI
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, []);
-  const pick = (p) => { setQ(''); setItems([]); setOpen(false); onPick(p); setTimeout(() => ref.current && ref.current.focus(), 0); };
+  const pick = (p) => { setQ(''); setItems([]); setOpen(false); onPick(p); if (!isPhone()) setTimeout(() => ref.current && ref.current.focus(), 0); };
   const shown = q.trim() ? items : (browse && suggest) || [];
   const more = () => { const text = q.trim(); setOpen(false); setQ(''); if (onMore) onMore(text); };
   const byCode = async (code) => {
@@ -99,6 +100,13 @@ export function ProductSearch({ onPick, priceListId, warehouseId, currency, usdI
       const r = await api.get(`/api/products/by-code/${encodeURIComponent(code)}`, { price_list_id: priceListId, warehouse_id: warehouseId });
       return r.product;
     } catch (e) { return null; }
+  };
+  /** a code read with the camera: that product, or the code as search text */
+  const fromCamera = async (code) => {
+    const p = await byCode(code);
+    if (p) { pick(p); toast(t('pos.added', { name: p.name })); return; }
+    setQ(code);
+    setOpen(true);
   };
   const onKey = async (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setHi((h) => Math.min(h + 1, shown.length - 1)); return; }
@@ -125,10 +133,12 @@ export function ProductSearch({ onPick, priceListId, warehouseId, currency, usdI
     return p.price != null ? money(priceIn(p), currency || p.currency) : '—';
   };
   const showList = open && (q.trim() || (browse && suggest && (suggest.length || onMore)));
+  const camera = canScan();
   return html`<div class="combo grow" ref=${box}>
-    <div class="input-wrap"><${Icon} name="scan-barcode" />
-      <input ref=${ref} class=${`input ${size}`} value=${q} placeholder=${placeholder || t('product.search_scan')} autoFocus=${autoFocus} autocomplete="off"
-        onFocus=${() => setOpen(true)} onInput=${(e) => { setQ(e.target.value); setHi(0); setOpen(true); }} onKeyDown=${onKey} /></div>
+    <div class=${`input-wrap ${camera ? 'has-tools' : ''}`}><${Icon} name="scan-barcode" />
+      <input ref=${ref} class=${`input ${size}`} value=${q} placeholder=${placeholder || t('product.search_scan')} autoFocus=${autoFocus && !isPhone()} autocomplete="off"
+        onFocus=${() => setOpen(true)} onInput=${(e) => { setQ(e.target.value); setHi(0); setOpen(true); }} onKeyDown=${onKey} />
+      ${camera && html`<div class="input-tools"><${ScanButton} onCode=${fromCamera} /></div>`}</div>
     ${showList && html`<div class="combo-list" role="listbox" style="min-width:420px">
       ${q.trim()
         ? (busy && !items.length ? html`<div class="combo-empty">${t('common.loading')}</div>` : !items.length ? html`<div class="combo-empty">${t('common.no_results')}</div>` : null)
@@ -161,6 +171,7 @@ export function ProductPickerDialog({ close, priceListId, warehouseId, type, cur
   const [hi, setHi] = useState(0);
   const searchRef = useRef(null);
   const wrapRef = useRef(null);
+  const phone = usePhone();
   const cats = boot().categories || [];
   const res = useAsync(() => api.get('/api/products', {
     q: dq.trim() || undefined, category_id: cat || undefined, stock: inStock ? 'in' : undefined, type,
@@ -206,7 +217,7 @@ export function ProductPickerDialog({ close, priceListId, warehouseId, type, cur
     <div class="col gap-12">
       <div class="row gap-12 wrap">
         <div class="input-wrap grow" style="min-width:240px"><${Icon} name="search" />
-          <input ref=${searchRef} class="input" value=${q} autoFocus placeholder=${t('product.search_scan')} autocomplete="off"
+          <input ref=${searchRef} class="input" value=${q} autoFocus=${!phone} placeholder=${t('product.search_scan')} autocomplete="off"
             onInput=${(e) => { setQ(e.target.value); setOnlySel(false); }} onKeyDown=${onKey} aria-label=${t('product.search_scan')} /></div>
         <${Check} checked=${inStock} onValue=${setInStock} label=${t('picker.in_stock')} />
       </div>
@@ -216,7 +227,26 @@ export function ProductPickerDialog({ close, priceListId, warehouseId, type, cur
         ${cats.map((c) => html`<button type="button" class=${`chip ${cat === c.id && !onlySel ? 'on' : ''}`} onClick=${() => { setCat(cat === c.id ? '' : c.id); setOnlySel(false); }}>${c.name}</button>`)}
       </div>
       <div class="table-wrap picker-list" ref=${wrapRef}>
-        ${!onlySel && res.loading && !res.data ? html`<${Loading} />` : !rows.length ? html`<${Empty} icon="package-search" title=${t('common.no_results')} />` : html`<table class="tbl compact">
+        ${!onlySel && res.loading && !res.data ? html`<${Loading} />` : !rows.length ? html`<${Empty} icon="package-search" title=${t('common.no_results')} />` : phone ? html`<div class="mcards">${rows.map((p) => {
+          // phone: tap a product to choose it; its quantity appears under it
+          const it = sel.get(p.id);
+          return html`<div key=${p.id} class=${`mcard clickable ${it ? 'selected' : ''}`} onClick=${() => toggle(p)}>
+            <div class="mc-top">
+              <div class="mc-lead"><input type="checkbox" checked=${!!it} onClick=${(e) => e.stopPropagation()} onChange=${() => toggle(p)} aria-label=${p.name} /></div>
+              <div class="mc-main"><div class="mc-title" dir="auto">${p.name}</div>
+                <div class="mc-sub">${p.code ? html`<span class="ltr">${p.code}</span>` : null}<span>${stockCell(p)}</span></div></div>
+              ${showPrices && priceOf && html`<div class="mc-end"><div class="mc-right num">${money(priceOf(p), currency)}</div></div>`}
+            </div>
+            ${it && html`<div class="picker-qty" onClick=${(e) => e.stopPropagation()}>
+              <span class="small muted">${t('print.col.qty')}</span>
+              <div class="qty">
+                <button type="button" onClick=${() => { if (Number(it.qty) > 1) setQty(p.id, Number(it.qty) - 1); else toggle(p); }} aria-label="-"><${Icon} name="minus" size="sm" /></button>
+                <${NumInput} value=${it.qty} onValue=${(v) => setQty(p.id, v)} dec=${3} min=${0} />
+                <button type="button" onClick=${() => setQty(p.id, (Number(it.qty) || 0) + 1)} aria-label="+"><${Icon} name="plus" size="sm" /></button>
+              </div>
+            </div>`}
+          </div>`;
+        })}</div>` : html`<table class="tbl compact">
           <thead><tr>
             <th class="c" style="width:38px"><input type="checkbox" checked=${allOn} onChange=${toggleAll} title=${t('picker.select_all')} aria-label=${t('picker.select_all')} /></th>
             <th>${t('nav.products')}</th>
@@ -237,7 +267,7 @@ export function ProductPickerDialog({ close, priceListId, warehouseId, type, cur
         </table>`}
       </div>
       ${!onlySel && total > found.length && html`<p class="small muted" style="margin:0">${t('picker.more', { n: total - found.length })}</p>`}
-      <p class="tiny muted" style="margin:0">${t('picker.keys')}</p>
+      ${!phone && html`<p class="tiny muted" style="margin:0">${t('picker.keys')}</p>`}
     </div>
   </${Modal}>`;
 }

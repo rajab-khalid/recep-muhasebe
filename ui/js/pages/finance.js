@@ -8,7 +8,7 @@ import { setQuery } from '../core/router.js';
 import { money, today, date as fdate, usdIqd, decimals, display } from '../core/format.js';
 import {
   Btn, IconBtn, Modal, Field, Input, NumInput, Select, Segmented, Check, Table, Panel, Empty, Loading, Notice, Pill, Money, Tabs,
-  DateRange, periodRange, SearchBox, useAsync, useDebounced, openModal, toast, errToast, promptDialog, confirmDialog, DateInput } from '../core/ui.js';
+  DateRange, periodRange, SearchBox, useAsync, useDebounced, openModal, toast, errToast, promptDialog, confirmDialog, DateInput, Filters } from '../core/ui.js';
 import { downloadXlsx } from '../core/xlsx.js';
 import { printTables } from '../core/print.js';
 import { refreshBoot } from '../core/session.js';
@@ -179,14 +179,16 @@ function Entries({ query }) {
   return html`<div>
     <div class="toolbar">
       <${Segmented} value=${f.kind} onValue=${(v) => setF({ ...f, kind: v, category_id: '' })} options=${[{ value: '', label: t('common.all') }, { value: 'expense', label: t('fin.expenses') }, { value: 'income', label: t('fin.incomes') }]} />
+      <${Filters} active=${[f.from !== def.from || f.to !== def.to, f.category_id, f.account_id, f.status].filter(Boolean).length}>
       <${DateRange} from=${f.from} to=${f.to} onChange=${(r) => setF({ ...f, ...r })} />
       <div style="width:190px"><${Select} value=${f.category_id} onValue=${(v) => setF({ ...f, category_id: v })} placeholder=${t('fin.all_categories')} options=${f.kind ? categoryOptions(f.kind) : catOpts} /></div>
       <div style="width:190px"><${Select} value=${f.account_id} onValue=${(v) => setF({ ...f, account_id: v })} placeholder=${t('pay.all_accounts')} options=${accountOptions({ includeInactive: true })} /></div>
-      <${SearchBox} value=${f.q} onValue=${(v) => setF({ ...f, q: v })} cls="search" />
       <${Check} checked=${f.status === 'all'} onValue=${(v) => setF({ ...f, status: v ? 'all' : '' })} label=${t('common.show_cancelled')} />
+      </${Filters}>
+      <${SearchBox} value=${f.q} onValue=${(v) => setF({ ...f, q: v })} cls="search" />
       <div class="toolbar-end">
       <${IconBtn} icon="file-spreadsheet" title=${t('common.export_excel')} onClick=${exportX} />
-      ${can('finance.manage') && html`<${Btn} icon="plus" onClick=${() => add('income')}>${t('fin.new_income')}</${Btn}><${Btn} kind="primary" icon="plus" onClick=${() => add('expense')}>${t('fin.new_expense')}</${Btn}>`}
+      ${can('finance.manage') && html`<${Btn} icon="plus" onClick=${() => add('income')}>${t('fin.new_income')}</${Btn}><${Btn} kind="primary" cls="fab" icon="plus" onClick=${() => add('expense')}>${t('fin.new_expense')}</${Btn}>`}
       </div>
     </div>
     ${data && html`<div class="row wrap gap-16 mb-12 small">
@@ -198,15 +200,15 @@ function Entries({ query }) {
         rows=${rows} onRow=${edit} rowCls=${(r) => (r.status !== 'posted' ? 'cancelled' : '')}
         empty=${html`<${Empty} icon="receipt-text" title=${t('fin.none')} action=${can('finance.manage') && html`<${Btn} kind="primary" icon="plus" onClick=${() => add('expense')}>${t('fin.new_expense')}</${Btn}>`} />`}
         columns=${[
-          { key: 'no', label: t('doc.no'), render: (r) => html`<span class="strong">${r.no}</span>` },
-          { key: 'date', label: t('common.date'), render: (r) => fdate(r.date) },
-          { key: 'kind', label: t('common.type'), render: (r) => html`<${Pill} kind=${r.kind === 'expense' ? 'out' : 'in'}>${t(`fin.${r.kind}`)}</${Pill}>` },
-          { key: 'cat', label: t('fin.category'), render: (r) => html`<span>${r.category_name || '—'}</span>${r.in_pl === 0 ? html` <${Pill} title=${t('fin.not_in_pl')}>${t('fin.not_pl_short')}</${Pill}>` : null}` },
-          { key: 'desc', label: t('common.description'), render: (r) => html`<span dir="auto">${r.description || ''}</span>${r.staff_name ? html`<div class="sub">${r.staff_name}</div>` : null}` },
-          { key: 'acc', label: t('pay.account'), render: (r) => html`<span class="small">${r.account_name || (r.partner_name ? html`<span class="warn-text">${t('fin.owed')}: ${r.partner_name}</span>` : '—')}</span>` },
-          { key: 'amount', label: t('pay.amount'), align: 'r', render: (r) => html`<${Money} value=${r.kind === 'expense' ? -r.amount : r.amount} cur=${r.currency} colored strong />` },
-          { key: 'user', label: t('common.user'), render: (r) => html`<span class="small muted">${r.user_name || ''}</span>` },
-          can('finance.manage') && { key: 'act', label: '', cls: 'w-actions', render: (r) => r.status === 'posted' && html`<${IconBtn} icon="ban" danger title=${t('common.cancel_doc')} onClick=${() => cancel(r)} />` },
+          { key: 'no', label: t('doc.no'), mobile: 'sub', render: (r) => html`<span class="strong">${r.no}</span>` },
+          { key: 'date', label: t('common.date'), mobile: 'sub', render: (r) => fdate(r.date) },
+          { key: 'kind', label: t('common.type'), mobile: 'subright', render: (r) => html`<${Pill} kind=${r.kind === 'expense' ? 'out' : 'in'}>${t(`fin.${r.kind}`)}</${Pill}>` },
+          { key: 'cat', label: t('fin.category'), mobile: 'title', render: (r) => html`<span>${r.category_name || '—'}</span>${r.in_pl === 0 ? html` <${Pill} title=${t('fin.not_in_pl')}>${t('fin.not_pl_short')}</${Pill}>` : null}` },
+          { key: 'desc', label: t('common.description'), mobile: 'row', render: (r) => html`<span dir="auto">${r.description || ''}</span>${r.staff_name ? html`<div class="sub">${r.staff_name}</div>` : null}` },
+          { key: 'acc', label: t('pay.account'), mobile: 'row', render: (r) => html`<span class="small">${r.account_name || (r.partner_name ? html`<span class="warn-text">${t('fin.owed')}: ${r.partner_name}</span>` : '—')}</span>` },
+          { key: 'amount', label: t('pay.amount'), align: 'r', mobile: 'right', render: (r) => html`<${Money} value=${r.kind === 'expense' ? -r.amount : r.amount} cur=${r.currency} colored strong />` },
+          { key: 'user', label: t('common.user'), mobile: 'hide', render: (r) => html`<span class="small muted">${r.user_name || ''}</span>` },
+          can('finance.manage') && { key: 'act', label: '', cls: 'w-actions', mobile: 'actions', render: (r) => r.status === 'posted' && html`<${IconBtn} icon="ban" danger title=${t('common.cancel_doc')} onClick=${() => cancel(r)} />` },
         ]} />`}
     </div>
   </div>`;
@@ -256,12 +258,12 @@ function Recurring() {
     <div class="panel">${loading && !data ? html`<${Loading} />` : html`<${Table} rows=${rows} onRow=${can('finance.manage') ? edit : null}
       empty=${html`<${Empty} icon="refresh-cw" title=${t('fin.recurring_none')} />`}
       columns=${[
-        { key: 'day', label: t('fin.day_of_month'), render: (r) => html`<span class="num strong">${r.day_of_month}</span>` },
-        { key: 'desc', label: t('common.description'), render: (r) => html`<span dir="auto">${r.description || r.category_name || '—'}</span><div class="sub">${r.category_name || ''}</div>` },
-        { key: 'acc', label: t('pay.account'), render: (r) => r.account_name || html`<span class="muted">${t('fin.default_cash')}</span>` },
-        { key: 'amount', label: t('pay.amount'), align: 'r', render: (r) => html`<${Money} value=${r.kind === 'expense' ? -r.amount : r.amount} cur=${r.currency} colored />` },
-        { key: 'state', label: t('fin.this_month'), render: (r) => !r.active ? html`<${Pill}>${t('common.inactive')}</${Pill}>` : r.this_month_entry ? html`<${Pill} kind="in" dot>${t('fin.generated_short')}</${Pill}>` : r.day_of_month <= day ? html`<${Pill} kind="warn" dot>${t('fin.due')}</${Pill}>` : html`<${Pill} dot>${t('fin.upcoming')}</${Pill}>` },
-        can('finance.manage') && { key: 'act', label: '', cls: 'w-actions', render: (r) => html`<div class="row gap-4">
+        { key: 'day', label: t('fin.day_of_month'), mobile: 'row', render: (r) => html`<span class="num strong">${r.day_of_month}</span>` },
+        { key: 'desc', label: t('common.description'), mobile: 'title', render: (r) => html`<span dir="auto">${r.description || r.category_name || '—'}</span><div class="sub">${r.category_name || ''}</div>` },
+        { key: 'acc', label: t('pay.account'), mobile: 'row', render: (r) => r.account_name || html`<span class="muted">${t('fin.default_cash')}</span>` },
+        { key: 'amount', label: t('pay.amount'), align: 'r', mobile: 'right', render: (r) => html`<${Money} value=${r.kind === 'expense' ? -r.amount : r.amount} cur=${r.currency} colored />` },
+        { key: 'state', label: t('fin.this_month'), mobile: 'subright', render: (r) => !r.active ? html`<${Pill}>${t('common.inactive')}</${Pill}>` : r.this_month_entry ? html`<${Pill} kind="in" dot>${t('fin.generated_short')}</${Pill}>` : r.day_of_month <= day ? html`<${Pill} kind="warn" dot>${t('fin.due')}</${Pill}>` : html`<${Pill} dot>${t('fin.upcoming')}</${Pill}>` },
+        can('finance.manage') && { key: 'act', label: '', cls: 'w-actions', mobile: 'actions', render: (r) => html`<div class="row gap-4">
           ${r.active && !r.this_month_entry && html`<${Btn} size="sm" onClick=${() => generate([r.id])}>${t('fin.generate')}</${Btn}>`}
           <${IconBtn} icon="trash-2" danger title=${t('common.delete')} onClick=${() => del(r)} /></div>` },
       ]} />`}</div>

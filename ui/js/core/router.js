@@ -36,8 +36,65 @@ export function useRoute() {
   return r;
 }
 
+/*
+ * A phone's Back button closes the open sheet (dialog, menu, camera) instead of leaving the screen: each open
+ * sheet adds a history entry with the same address. A sheet closed by its own buttons takes its entry back.
+ * Going back in the history finishes a moment later, so screen changes and new sheets asked for meanwhile
+ * wait for it (otherwise that Back would undo them).
+ */
+let trapSeq = 0;
+const traps = []; // open sheets, newest last: { id, close }
+const inflight = []; // our own history.back() calls on their way
+const waiting = []; // history changes waiting for them
+const trapsWanted = () => !window.desktop && window.matchMedia('(max-width: 760px), (pointer: coarse)').matches;
+function runWaiting() { while (!inflight.length && waiting.length) waiting.shift()(); }
+function ourBack() {
+  const tok = {};
+  inflight.push(tok);
+  history.back();
+  // nothing to go back to after all (should not happen): do not keep the waiting changes forever
+  setTimeout(() => { const i = inflight.indexOf(tok); if (i >= 0) { inflight.splice(i, 1); runWaiting(); } }, 1500);
+}
+/** true when fn had to wait (it runs later, in order) */
+function whenFree(fn) { if (inflight.length || waiting.length) { waiting.push(fn); return true; } return false; }
+window.addEventListener('popstate', () => {
+  if (inflight.length) {
+    inflight.shift();
+    setTimeout(runWaiting, 0); // after the address change of this step has been handled
+    return;
+  }
+  const top = traps.pop();
+  if (top) { top.close(); return; }
+  // arrived on an entry left by a sheet that closed while another screen opened: it repeats the screen below
+  if (history.state && history.state.rmTrap) ourBack();
+});
+
+/** the phone's Back closes this sheet; returns the release function to call when the sheet closes */
+export function trapBack(close) {
+  if (!trapsWanted()) return () => {};
+  const id = ++trapSeq;
+  traps.push({ id, close });
+  const push = () => { if (traps.some((x) => x.id === id)) history.pushState({ rmTrap: id }, '', location.href); };
+  if (!whenFree(push)) push();
+  return () => {
+    const i = traps.findIndex((x) => x.id === id);
+    if (i < 0) return; // closed by Back: its entry is gone already
+    traps.splice(i, 1);
+    const take = () => { if (history.state && history.state.rmTrap === id) ourBack(); };
+    if (!whenFree(take)) take();
+  };
+}
+
+/*
+ * The public functions wait their turn (whenFree); the waiting ones run in order once our own Back has arrived,
+ * through the do* functions, which never queue again (so the queue cannot go round in circles).
+ */
+
 /** opts.replace: show the page in place of the current one (e.g. a saved document instead of its empty form) */
 export function navigate(path, query, opts = {}) {
+  if (!whenFree(() => doNavigate(path, query, opts))) doNavigate(path, query, opts);
+}
+function doNavigate(path, query, opts = {}) {
   const q = query ? '?' + new URLSearchParams(Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== '')).toString() : '';
   const target = '#' + path + (q.length > 1 ? q : '');
   if (location.hash === target) { current = parse(); notify(); return; }
@@ -53,6 +110,9 @@ export function navigate(path, query, opts = {}) {
 
 /** replace query params without adding history entries */
 export function setQuery(patch) {
+  if (!whenFree(() => doSetQuery(patch))) doSetQuery(patch);
+}
+function doSetQuery(patch) {
   const r = parse();
   const q = Object.assign({}, r.query, patch);
   for (const k of Object.keys(q)) if (q[k] === undefined || q[k] === null || q[k] === '') delete q[k];
@@ -71,5 +131,8 @@ export function previous() { return trail.length > 1 ? trail[trail.length - 2] :
 
 /** one screen back; with nothing to go back to, the fallback page (usually the parent list) */
 export function back(fallback = '/') {
-  if (trail.length > 1) { goingBack = true; history.back(); } else navigate(fallback, null, { replace: true });
+  if (!whenFree(() => doBack(fallback))) doBack(fallback);
+}
+function doBack(fallback) {
+  if (trail.length > 1) { goingBack = true; ourBack(); } else doNavigate(fallback, null, { replace: true });
 }

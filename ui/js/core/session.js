@@ -21,6 +21,7 @@ export async function refreshBoot() {
 
 export async function logout() {
   try { await api.post('/api/auth/logout'); } catch (e) { /* ignore */ }
+  try { sessionStorage.removeItem('rm_pos_cart'); } catch (e) { /* storage blocked */ } // the next user starts with an empty sale
   store.set({ user: null, boot: null, locked: false });
   location.hash = '#/';
 }

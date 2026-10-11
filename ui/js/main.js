@@ -28,5 +28,15 @@ async function start() {
   render(html`<${App} />`, document.getElementById('app'));
 }
 
+/*
+ * Phone app: the helper that shows a "cannot reach the shop computer" page, and the browser's offer to install
+ * the program on the home screen (shown in the phone menu). Not used inside the desktop program.
+ */
+if (!window.desktop && window.isSecureContext && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}); });
+}
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); store.set({ installPrompt: e }); });
+window.addEventListener('appinstalled', () => store.set({ installPrompt: null }));
+
 window.addEventListener('unhandledrejection', (e) => { if (window.__RM_DEBUG) console.error(e.reason); });
 start();

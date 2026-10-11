@@ -1,5 +1,5 @@
 'use strict';
-/* What the screens may ask the desktop program to do (printing, the old program's data, folders, updates). */
+/* What the screens may ask the desktop program to do (printing, the old program's data, folders, updates, phone app). */
 const { contextBridge, ipcRenderer } = require('electron');
 
 const call = (name) => (...args) => ipcRenderer.invoke(name, ...args);
@@ -16,4 +16,7 @@ contextBridge.exposeInMainWorld('desktop', {
   openExternal: call('rm:open-external'),
   relaunch: call('rm:relaunch'),
   checkUpdates: call('rm:check-updates'),
+  phoneStatus: call('rm:phone-status'),
+  phoneEnable: call('rm:phone-enable'),
+  phoneDisable: call('rm:phone-disable'),
 });

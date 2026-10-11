@@ -5,6 +5,7 @@ import { api } from '../core/api.js';
 import { initials } from '../core/format.js';
 import { Btn, Icon, Input, Field, Check, Spinner } from '../core/ui.js';
 import { loadBoot } from '../core/session.js';
+import { useStore } from '../core/store.js';
 
 export function Login() {
   const [users, setUsers] = useState(null);
@@ -16,6 +17,7 @@ export function Login() {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [help, setHelp] = useState(false);
+  const remote = useStore((s) => !!(s.setup && s.setup.remote)); // the phone app: a PIN or password is always needed
   // the PIN typed so far; kept in a ref too, so quick typing never loses a digit between two screen updates
   const pinRef = useRef('');
   const busyRef = useRef(false);
@@ -74,6 +76,7 @@ export function Login() {
     </aside>
     <main class="auth-main">
       <div class="auth-card">
+        <div class="auth-brand"><img src="img/icon.svg" width="40" height="40" alt="" /><span>Recep Muhasebe</span></div>
         <div class="row between mb-16">
           <h2 style="font-family:var(--font-cond);font-size:26px">${t('login.title')}</h2>
           <select class="select" style="width:auto" value=${getLang()} onChange=${(e) => setLang(e.target.value)} aria-label=${t('common.language')}>
@@ -103,7 +106,8 @@ export function Login() {
                 <button type="button" onClick=${() => press('del')} aria-label=${t('common.delete')}><${Icon} name="undo-2" /></button>
                 <button type="button" onClick=${() => press('0')}>0</button>
                 <button type="button" style="background:var(--graphite);color:#fff" disabled=${secret.length < 4 || busy} onClick=${submitPin} aria-label=${t('login.submit')}><${Icon} name="check" /></button>
-              </div>` : noSecret ? html`
+              </div>` : noSecret && remote ? html`
+              <div class="notice warn mt-8">${t('login.no_secret_remote')}</div>` : noSecret ? html`
               <${Btn} kind="primary" size="lg" cls="mt-8" style="width:100%" disabled=${busy} onClick=${() => submit('')}>${t('login.submit')}</${Btn}>
               <p class="small muted mt-8">${t('login.no_secret_hint')}</p>` : html`
               <form class="col gap-12" onSubmit=${(e) => { e.preventDefault(); submit(); }}>

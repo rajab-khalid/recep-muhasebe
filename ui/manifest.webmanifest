@@ -1,9 +1,25 @@
 {
+  "id": "/",
   "name": "Recep Muhasebe",
   "short_name": "Recep",
-  "start_url": "./",
+  "description": "Muhasebe, stok, hızlı satış ve servis — dükkândaki programın telefon uygulaması",
+  "lang": "tr",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#1C2127",
   "theme_color": "#1C2127",
-  "icons": [{ "src": "img/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    { "src": "img/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "img/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "img/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "img/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Hızlı Satış", "url": "/#/pos", "icons": [{ "src": "img/icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Satış Faturaları", "url": "/#/docs/sale", "icons": [{ "src": "img/icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Ürünler", "url": "/#/products", "icons": [{ "src": "img/icon-192.png", "sizes": "192x192", "type": "image/png" }] }
+  ]
 }

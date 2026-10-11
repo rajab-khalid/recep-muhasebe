@@ -1,7 +1,30 @@
 // Printing. In the desktop app pages go through the main process (can print silently to a chosen printer);
-// in a browser (phone / other PC) a hidden iframe opens the system print dialog.
+// in a browser on another PC a hidden iframe opens the system print dialog. A phone cannot print a hidden
+// frame, so there the page opens on its own screen (printview.html) with Print / Back buttons.
 import { t } from './i18n.js';
-import { toast } from './ui.js';
+import { toast, isPhone } from './ui.js';
+
+/** phones and tablets: show the page and print from there */
+export function printsOnOwnPage() {
+  if (window.desktop) return false;
+  return isPhone() || window.matchMedia('(pointer: coarse)').matches;
+}
+
+const PAGE_WIDTH = { A4: '190mm', A5: '132mm', receipt: '80mm' };
+
+function openPrintView(full, opts, auto) {
+  const width = opts.page === 'label' ? `${Number(opts.w) || 50}mm` : PAGE_WIDTH[opts.page] || PAGE_WIDTH.A4;
+  try {
+    sessionStorage.setItem('rm_print', JSON.stringify({ html: full, width, auto: !!auto, title: opts.title || '' }));
+  } catch (e) {
+    toast(t('print.failed'), 'err');
+    return { ok: false };
+  }
+  // printed from a dialog: take the dialog's place in the history, so Back returns to the screen itself
+  if (history.state && history.state.rmTrap) location.replace('/printview.html');
+  else location.href = '/printview.html';
+  return { ok: true };
+}
 
 const PAGE_CSS = {
   A4: '@page { size: A4; margin: 10mm; }',
@@ -46,6 +69,7 @@ export async function printHtml(body, opts = {}) {
       return { ok: false };
     }
   }
+  if (printsOnOwnPage()) return openPrintView(full, opts, true);
   const iframe = document.createElement('iframe');
   iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
   document.body.appendChild(iframe);
@@ -64,6 +88,7 @@ export async function printHtml(body, opts = {}) {
 
 /** open the HTML in a new window for preview / saving as PDF from the browser */
 export function previewHtml(body, opts = {}) {
+  if (printsOnOwnPage()) { openPrintView(wrapHtml(body, opts), opts, false); return; }
   const w = window.open('', '_blank');
   if (!w) { toast(t('print.popup_blocked'), 'err'); return; }
   w.document.write(wrapHtml(body, opts));

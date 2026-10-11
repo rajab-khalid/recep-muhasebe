@@ -30,7 +30,7 @@ export function Dashboard() {
   const collect = (cur) => (d.today.collections.find((c) => c.currency === cur) || {}).amount || 0;
 
   return html`<div class="page stack">
-    <div class="row wrap gap-8">
+    <div class="row wrap gap-8 dash-actions">
       <div class="grow small muted">${t('dash.greeting', { date: fdate(d.date) })}</div>
       ${can('payments.collect') && html`<${Btn} icon="hand-coins" onClick=${() => openModal(PaymentDialog, { direction: 'in' }).then((r) => r && reload())}>${t('pay.collect')}</${Btn}>`}
       ${can('purchases.create') && html`<${Btn} icon="truck" onClick=${() => navigate('/docs/purchase/new')}>${t('doc.new.purchase')}</${Btn}>`}

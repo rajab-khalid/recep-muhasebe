@@ -2,6 +2,7 @@
 import { html, render, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from './h.js';
 import { ICONS } from './icon-data.js';
 import { t, getLang } from './i18n.js';
+import { trapBack } from './router.js';
 import { money, num, parseNum, date, today, addDays, monthStart, addMonths, round } from './format.js';
 
 /* ------------------------------------------------------------------ icons & basics */
@@ -130,9 +131,11 @@ export function Tabs({ tabs, value, onValue }) {
     ${tb.icon && html`<${Icon} name=${tb.icon} size="sm" />`}${tb.label}${tb.count !== undefined && tb.count !== null && html`<span class="count">${tb.count}</span>`}</button>`)}</div>`;
 }
 
-export function SearchBox({ value, onValue, placeholder, autoFocus, cls = '', inputRef, onKeyDown }) {
-  return html`<div class=${`input-wrap ${cls}`}><${Icon} name="search" /><input ref=${inputRef} class="input" type="search" value=${value ?? ''} placeholder=${placeholder || t('common.search')}
-    autoFocus=${autoFocus} onInput=${(e) => onValue(e.target.value)} onKeyDown=${onKeyDown} /></div>`;
+export function SearchBox({ value, onValue, placeholder, autoFocus, cls = '', inputRef, onKeyDown, tools }) {
+  // a list's own search box does not pop the phone keyboard up when the list opens
+  const focus = autoFocus && !(/\bsearch\b/.test(cls) && isPhone());
+  return html`<div class=${`input-wrap ${cls} ${tools ? 'has-tools' : ''}`}><${Icon} name="search" /><input ref=${inputRef} class="input" type="search" value=${value ?? ''} placeholder=${placeholder || t('common.search')}
+    autoFocus=${focus} onInput=${(e) => onValue(e.target.value)} onKeyDown=${onKeyDown} />${tools && html`<div class="input-tools">${tools}</div>`}</div>`;
 }
 
 /**
@@ -194,11 +197,79 @@ export function Combo({ value, placeholder, search, renderItem, onSelect, onCrea
 }
 
 /* ------------------------------------------------------------------ table */
-/**
- * columns: [{ key, label, render(row), cls, align: 'r'|'c', sort: fieldName, width }]
+/*
+ * On a phone a table is shown as a list of cards. Each column says where it goes on the card (mobile):
+ *   'lead' (picture / tick box at the start), 'title', 'sub' (small line under the title), 'right' (amount at the
+ *   end), 'subright' (small line under it), 'row' (label: value line), 'actions' (buttons at the bottom), 'hide'.
+ * Columns without a place: the first one is the title, the last amount column goes to the end, the rest are
+ * label: value lines.
  */
-export function Table({ columns, rows, onRow, empty, foot, rowCls, compact, sort, onSort, stickyTop }) {
+function mobileRoles(cols) {
+  if (cols.some((c) => c.mobile)) return cols.map((c) => c.mobile || 'row');
+  const roles = cols.map((c) => (/\bw-actions\b/.test(c.cls || '') ? 'actions' : 'row'));
+  const first = roles.indexOf('row');
+  if (first >= 0) roles[first] = 'title';
+  let right = -1;
+  cols.forEach((c, i) => { if (c.align === 'r' && roles[i] === 'row') right = i; });
+  if (right >= 0) roles[right] = 'right';
+  return roles;
+}
+
+/** nothing to show: empty values, and plain elements that only wrap empty text (a card skips such lines) */
+const KEEP_TAGS = new Set(['img', 'input', 'svg', 'select', 'textarea', 'button', 'i', 'hr']);
+function blank(v) {
+  if (v === null || v === undefined || v === false || v === '') return true;
+  if (Array.isArray(v)) return v.every(blank);
+  if (typeof v === 'object' && v.props && typeof v.type === 'string') {
+    if (KEEP_TAGS.has(v.type) || v.props.dangerouslySetInnerHTML) return false;
+    return blank(v.props.children);
+  }
+  return false;
+}
+
+function CardList({ cols, rows, onRow, rowCls, foot }) {
+  const roles = mobileRoles(cols);
+  const cell = (c, r, i) => (c.render ? c.render(r, i) : r[c.key]);
+  const pick = (role, r, i) => cols.map((c, k) => (roles[k] === role ? { c, v: cell(c, r, i) } : null)).filter((x) => x && !blank(x.v));
+  return html`<div class="mcards">
+    ${rows.map((r, i) => {
+      const lead = pick('lead', r, i);
+      const title = pick('title', r, i);
+      const sub = pick('sub', r, i);
+      const right = pick('right', r, i);
+      const subr = pick('subright', r, i);
+      const lines = pick('row', r, i);
+      const acts = pick('actions', r, i);
+      return html`<div key=${r.id || i} class=${`mcard ${onRow ? 'clickable' : ''} ${rowCls ? rowCls(r) : ''}`}
+        onClick=${onRow ? (e) => { if (e.target.closest('button, a, input, select, label')) return; onRow(r, e); } : undefined}>
+        <div class="mc-top">
+          ${lead.length > 0 && html`<div class="mc-lead">${lead.map((x) => html`<div>${x.v}</div>`)}</div>`}
+          <div class="mc-main">
+            ${title.map((x) => html`<div class="mc-title">${x.v}</div>`)}
+            ${sub.length > 0 && html`<div class="mc-sub">${sub.map((x) => html`<span>${x.v}</span>`)}</div>`}
+          </div>
+          ${(right.length > 0 || subr.length > 0) && html`<div class="mc-end">
+            ${right.map((x) => html`<div class="mc-right">${x.v}</div>`)}
+            ${subr.map((x) => html`<div class="mc-subr">${x.v}</div>`)}
+          </div>`}
+        </div>
+        ${lines.length > 0 && html`<div class="mc-rows">${lines.map((x) => html`<div class="mc-row">
+          ${typeof x.c.label === 'string' && x.c.label ? html`<span class="mc-k">${x.c.label}</span>` : null}<span class="mc-v">${x.v}</span></div>`)}</div>`}
+        ${acts.length > 0 && html`<div class="mc-actions">${acts.map((x) => x.v)}</div>`}
+      </div>`;
+    })}
+    ${foot && html`<div class="table-wrap mc-foot"><table class="tbl compact"><tfoot><tr>${foot}</tr></tfoot></table></div>`}
+  </div>`;
+}
+
+/**
+ * columns: [{ key, label, render(row), cls, align: 'r'|'c', sort: fieldName, width, mobile }]
+ * cards=false keeps a real (scrolling) table on phones too, e.g. for wide number tables.
+ */
+export function Table({ columns, rows, onRow, empty, foot, rowCls, compact, sort, onSort, stickyTop, cards = true }) {
+  const phone = usePhone();
   if (!rows || !rows.length) return empty || html`<${Empty} />`;
+  if (phone && cards) return html`<${CardList} cols=${columns.filter(Boolean)} rows=${rows} onRow=${onRow} rowCls=${rowCls} foot=${foot} />`;
   return html`<div class="table-wrap"><table class=${`tbl ${compact ? 'compact' : ''}`}>
     <thead><tr>${columns.filter(Boolean).map((c) => html`<th class=${`${c.align || ''} ${c.sort ? 'sortable' : ''} ${c.cls || ''}`} style=${c.width ? `width:${c.width}` : ''}
       onClick=${c.sort && onSort ? () => onSort(sort && sort.key === c.sort && sort.dir === 'asc' ? { key: c.sort, dir: 'desc' } : { key: c.sort, dir: 'asc' }) : undefined}>
@@ -293,10 +364,18 @@ function useDialogFocus(ref) {
   }, []);
 }
 
+/** the phone's Back button closes the dialog (see trapBack) */
+export function useBackCloses(close) {
+  const latest = useRef(close);
+  latest.current = close;
+  useEffect(() => trapBack(() => latest.current()), []);
+}
+
 /** Standard modal frame */
 export function Modal({ title, close, children, foot, size = '', icon, onSubmit, left }) {
   const box = useRef(null);
   useDialogFocus(box);
+  useBackCloses(close);
   const body = html`<div class="modal-body">${children}</div>`;
   const inner = html`
     <div class="modal-head">${icon && html`<${Icon} name=${icon} />`}<h3>${title}</h3><${IconBtn} icon="x" title=${t('common.close')} onClick=${() => close()} /></div>
@@ -313,6 +392,7 @@ export function Modal({ title, close, children, foot, size = '', icon, onSubmit,
 export function Drawer({ title, close, children, foot, narrow, tools }) {
   const box = useRef(null);
   useDialogFocus(box);
+  useBackCloses(close);
   return html`<div><div class="drawer-overlay" onClick=${() => close()}></div>
     <aside ref=${box} tabindex="-1" class=${`drawer ${narrow ? 'narrow' : ''}`} role="dialog" aria-modal="true">
       <div class="modal-head"><h3>${title}</h3>${tools && html`<div class="row" style="margin-inline-start:auto">${tools}</div>`}<${IconBtn} icon="x" title=${t('common.close')} onClick=${() => close()} cls=${tools ? '' : ''} /></div>
@@ -372,6 +452,17 @@ export function MenuButton({ label, icon, items, kind = '', size = '', align = '
   </div>`;
 }
 
+/* ------------------------------------------------------------------ list filters */
+/** a list's filters: on a phone they fold under one button, so the list starts right under the search box */
+export function Filters({ children, active = 0 }) {
+  const phone = usePhone();
+  const [open, setOpen] = useState(false);
+  if (!phone) return children;
+  return html`<button type="button" class=${`btn filter-btn ${active ? 'on' : ''}`} onClick=${() => setOpen(!open)} aria-expanded=${open}>
+      <${Icon} name="sliders-horizontal" size="sm" />${t('common.filters')}${active ? html`<span class="count">${active}</span>` : null}</button>
+    ${open && html`<div class="filter-sheet">${children}</div>`}`;
+}
+
 /* ------------------------------------------------------------------ date range with presets */
 export function periodRange(id) {
   const td = today();
@@ -391,7 +482,7 @@ export const PERIODS = ['today', 'yesterday', 'week', 'month', 'last_month', '3m
 
 export function DateRange({ from, to, onChange }) {
   const preset = PERIODS.find((p) => { const r = periodRange(p); return r.from === from && r.to === to; }) || 'custom';
-  return html`<div class="row gap-4">
+  return html`<div class="row gap-4 date-range">
     <select class="select" style="width:auto" value=${preset} onChange=${(e) => { if (e.target.value !== 'custom') onChange(periodRange(e.target.value)); }}>
       ${PERIODS.map((p) => html`<option value=${p} selected=${p === preset}>${t(`period.${p}`)}</option>`)}
       <option value="custom" selected=${preset === 'custom'}>${t('period.custom')}</option>
@@ -552,6 +643,23 @@ function CalendarPop({ anchor, value, clearable, onPick, onClose }) {
 }
 
 /* ------------------------------------------------------------------ hooks */
+/** phone-size screen (the phone app, or a narrow window): bottom menu, cards instead of tables */
+const PHONE_QUERY = '(max-width: 760px)';
+let phoneMql = null;
+const phoneMedia = () => phoneMql || (phoneMql = window.matchMedia(PHONE_QUERY));
+export function isPhone() { return phoneMedia().matches; }
+export function usePhone() {
+  const [v, setV] = useState(isPhone);
+  useEffect(() => {
+    const m = phoneMedia();
+    const fn = () => setV(m.matches);
+    fn();
+    if (m.addEventListener) m.addEventListener('change', fn); else m.addListener(fn);
+    return () => { if (m.removeEventListener) m.removeEventListener('change', fn); else m.removeListener(fn); };
+  }, []);
+  return v;
+}
+
 export function useAsync(fn, deps = []) {
   const [state, setState] = useState({ data: null, loading: true, error: null });
   const seq = useRef(0);

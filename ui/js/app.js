@@ -2,11 +2,11 @@
 import { html, useState, useEffect, useRef } from './core/h.js';
 import { t, onLang, setLang, LANGS, getLang } from './core/i18n.js';
 import { store, useStore, can, setPrefs, boot } from './core/store.js';
-import { useRoute, navigate, back, canGoBack } from './core/router.js';
+import { useRoute, navigate, back, canGoBack, trapBack } from './core/router.js';
 import { api, ApiError } from './core/api.js';
 import { money, num, dateTime, initials, date as fdate, rateText } from './core/format.js';
 import {
-  Icon, IconBtn, Btn, Modal, ModalHost, ToastHost, openModal, toast, errToast, Field, NumInput, Input, Spinner, Empty, MenuButton, useHotkeys, Pill, confirmDialog,
+  Icon, IconBtn, Btn, Modal, ModalHost, ToastHost, openModal, toast, errToast, Field, NumInput, Input, Spinner, Empty, MenuButton, useHotkeys, Pill, confirmDialog, usePhone,
 } from './core/ui.js';
 import { loadBoot, logout, refreshBoot } from './core/session.js';
 import { Login } from './pages/login.js';
@@ -26,6 +26,7 @@ import { Users } from './pages/users.js';
 import { Settings } from './pages/settings.js';
 import { Audit } from './pages/audit.js';
 import { dn } from './core/names.js';
+import { ScanButton, canScan } from './core/scanner.js';
 
 export const NAV = [
   { group: 'nav.g.main', items: [{ path: '/', icon: 'gauge', label: 'nav.dashboard', perm: 'dashboard.view' }] },
@@ -92,26 +93,160 @@ export function App() {
 
 function allowed(item) { return !item.perm || can(item.perm); }
 
+/** screens that fill the phone and have their own bottom bar (no tab bar there) */
+function ownBottomBar(route) {
+  const [a, b, c] = route.parts;
+  return a === 'pos' || (a === 'docs' && c === 'new') || (a === 'doc' && c === 'edit') || (a === 'products' && b === 'new') || (a === 'stock' && b === 'count' && !!c);
+}
+
+/** a list or section of the menu (no Back arrow on a phone; the bottom menu leads there) */
+function isSectionRoot(route) {
+  const p = route.path;
+  if (p === '/' || p.startsWith('/settings')) return true;
+  if (route.parts[0] === 'stock' && route.parts[1] !== 'count') return true;
+  return NAV.some((g) => g.items.some((it) => it.path === p));
+}
+
 function Shell() {
   const route = useRoute();
+  const phone = usePhone();
   const collapsed = useStore((s) => s.sidebarCollapsed);
   const [mobileOpen, setMobileOpen] = useState(false);
   useEffect(() => { setMobileOpen(false); }, [route.raw]);
+  // phone: Back closes the menu
+  useEffect(() => (mobileOpen && phone ? trapBack(() => setMobileOpen(false)) : undefined), [mobileOpen, phone]);
   useIdleLock();
+  useNotifications();
+  useBackKeys();
   useHotkeys({
     'ctrl+k': () => openModal(GlobalSearch),
     f2: () => { if (can(['pos.use', 'sales.create'])) navigate('/pos'); else return false; },
   }, []);
   const isPos = route.parts[0] === 'pos';
-  return html`<div class=${`shell ${collapsed || isPos ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
-    <${Sidebar} route=${route} />
+  const tabs = phone && !ownBottomBar(route);
+  return html`<div class=${`shell ${collapsed || isPos ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''} ${tabs ? 'has-tabs' : ''}`}>
+    <${Sidebar} route=${route} phone=${phone} onClose=${() => setMobileOpen(false)} />
+    ${mobileOpen && html`<div class="side-scrim" onClick=${() => setMobileOpen(false)}></div>`}
     <div class="main">
-      <${Topbar} onMenu=${() => setMobileOpen(!mobileOpen)} />
+      ${phone ? html`<${PhoneTopbar} route=${route} onMenu=${() => setMobileOpen(true)} />` : html`<${Topbar} onMenu=${() => setMobileOpen(!mobileOpen)} />`}
       <main class=${`content ${isPos ? 'flush' : ''}`} id="content">
         <${Routes} route=${route} />
       </main>
+      ${tabs && html`<${TabBar} route=${route} menuOpen=${mobileOpen} onMenu=${() => setMobileOpen(!mobileOpen)} />`}
     </div>
   </div>`;
+}
+
+/* ------------------------------------------------------------------ phone: top bar and bottom menu */
+const TAB_CHOICES = [
+  { path: '/', icon: 'gauge', label: 'nav.tab.home', perm: 'dashboard.view' },
+  { path: '/pos', icon: 'shopping-cart', label: 'nav.tab.pos', perm: ['pos.use', 'sales.create'] },
+  { path: '/docs/sale', icon: 'receipt', label: 'nav.tab.sales', perm: 'sales.view' },
+  { path: '/products', icon: 'package', label: 'nav.tab.products', perm: 'products.view' },
+  { path: '/docs/service', icon: 'wrench', label: 'nav.tab.service', perm: 'service.view' },
+  { path: '/partners/customer', icon: 'users', label: 'nav.tab.customers', perm: 'partners.view' },
+  { path: '/cash', icon: 'wallet', label: 'nav.tab.cash', perm: ['cash.view', 'bank.view'] },
+  { path: '/stock', icon: 'boxes', label: 'nav.tab.stock', perm: 'stock.view' },
+];
+
+function TabBar({ route, onMenu, menuOpen }) {
+  const notif = useStore((s) => s.notifications);
+  const tabs = TAB_CHOICES.filter(allowed).slice(0, 4);
+  const p = route.path;
+  const on = (path) => !menuOpen && (path === '/' ? p === '/' : p === path || p.startsWith(path + '/'));
+  const svc = notif.filter((n) => n.kind === 'service_done' && !n.read).length;
+  return html`<nav class="tabbar" aria-label=${t('nav.menu')}>
+    ${tabs.map((it) => html`<a class=${`tab ${on(it.path) ? 'on' : ''}`} href=${'#' + it.path} aria-current=${on(it.path) ? 'page' : undefined}>
+      <${Icon} name=${it.icon} /><span>${t(it.label)}</span>${it.path === '/docs/service' && svc ? html`<i class="tab-badge">${svc}</i>` : null}</a>`)}
+    <button type="button" class=${`tab ${menuOpen ? 'on' : ''}`} onClick=${onMenu} aria-expanded=${menuOpen}><${Icon} name="menu" /><span>${t('nav.tab.menu')}</span></button>
+  </nav>`;
+}
+
+function PhoneTopbar({ route, onMenu }) {
+  const title = useStore((s) => s.pageTitle);
+  const crumbs = useStore((s) => s.crumbs);
+  const b = useStore((s) => s.boot);
+  const notifs = useStore((s) => s.notifications);
+  const iqd = ((b && b.currencies) || []).find((c) => c.code === 'IQD');
+  const company = (b && b.company) || {};
+  const unread = notifs.filter((n) => !n.read).length;
+  const root = isSectionRoot(route) && !ownBottomBar(route);
+  return html`<header class="topbar phone">
+    ${root ? html`<button type="button" class="tb-brand" onClick=${onMenu} aria-label=${t('nav.menu')}>${company.logo_url ? html`<img src=${company.logo_url} alt="" />` : 'R'}</button>`
+      : html`<button type="button" class="tb-btn" onClick=${goBack} aria-label=${t('common.back')} title=${t('common.back')}><${Icon} name="arrow-left" /></button>`}
+    <div class="title">
+      ${!root && crumbs && crumbs.length > 0 && html`<div class="crumbs">${crumbs[crumbs.length - 1].label}</div>`}
+      <h1 dir="auto">${title || ''}</h1>
+    </div>
+    <button type="button" class="tb-rate" onClick=${() => openModal(RateDialog)} title=${t('rate.edit')} aria-label=${t('rate.edit')}>
+      <${Icon} name="coins" size="sm" /><b class="num">${num(iqd ? iqd.rate : 0)}</b></button>
+    <button type="button" class="tb-btn" onClick=${() => openModal(GlobalSearch)} aria-label=${t('search.global')} title=${t('search.global')}><${Icon} name="search" /></button>
+    <button type="button" class="tb-btn" onClick=${() => openModal(NotificationsDialog)} aria-label=${t('notif.title')} title=${t('notif.title')}>
+      <${Icon} name="bell" />${unread > 0 && html`<span class="dot"></span>`}</button>
+  </header>`;
+}
+
+/** phone menu: account, rate, currency and language above the menu */
+function PhoneMenuHead({ onClose }) {
+  const b = useStore((s) => s.boot);
+  const u = useStore((s) => s.user);
+  const dc = useStore((s) => s.displayCurrency);
+  const install = useStore((s) => s.installPrompt);
+  const company = (b && b.company) || {};
+  const iqd = ((b && b.currencies) || []).find((c) => c.code === 'IQD');
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) && !standalone();
+  return html`<div class="side-phone">
+    <div class="sp-user">
+      <div class="avatar">${initials(u && u.full_name)}</div>
+      <div class="who grow"><b dir="auto">${u && u.full_name}</b><span dir="auto">${company.name || (u && dn(u.role_name))}</span></div>
+      <button type="button" class="chrome-btn" onClick=${onClose} aria-label=${t('common.close')}><${Icon} name="x" /></button>
+    </div>
+    <div class="sp-grid">
+      <button type="button" class="sp-tile" onClick=${() => { onClose(); openModal(RateDialog); }}>
+        <span class="k"><${Icon} name="coins" size="sm" />${t('rate.short')}</span><b class="num">${rateText(iqd ? iqd.rate : 0)}</b></button>
+      <div class="sp-tile">
+        <span class="k"><${Icon} name="banknote" size="sm" />${t('common.display_currency')}</span>
+        <div class="segmented">${['IQD', 'USD'].map((c) => html`<button type="button" class=${dc === c ? 'on' : ''} onClick=${() => { store.set({ displayCurrency: c }); setPrefs('display_currency', c); }}>${c}</button>`)}</div>
+      </div>
+    </div>
+    <label class="sp-lang"><${Icon} name="globe" size="sm" /><select class="select" value=${getLang()} onChange=${(e) => setLang(e.target.value)} aria-label=${t('common.language')}>
+      ${LANGS.map((l) => html`<option value=${l.code} selected=${l.code === getLang()}>${l.name}</option>`)}</select></label>
+    ${(install || ios) && html`<button type="button" class="sp-install" onClick=${() => { onClose(); installApp(); }}>
+      <${Icon} name="download" /><span><b>${t('app.install')}</b><small>${t('app.install_hint')}</small></span></button>`}
+  </div>`;
+}
+
+function PhoneMenuFoot({ onClose }) {
+  return html`<div class="side-phone-foot">
+    <button type="button" class="nav-item" onClick=${() => { onClose(); openModal(ChangeSecretDialog); }}><${Icon} name="key-round" /><span>${t('user.change_secret')}</span></button>
+    <button type="button" class="nav-item" onClick=${() => { onClose(); store.set({ locked: true }); }}><${Icon} name="lock" /><span>${t('user.lock')}</span></button>
+    <button type="button" class="nav-item danger" onClick=${() => logout()}><${Icon} name="log-out" /><span>${t('user.logout')}</span></button>
+  </div>`;
+}
+
+/* ------------------------------------------------------------------ installing the phone app */
+export function standalone() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function installApp() {
+  const p = store.state.installPrompt;
+  if (p) {
+    p.prompt();
+    p.userChoice.then(() => store.set({ installPrompt: null })).catch(() => {});
+    return;
+  }
+  openModal(InstallHelpDialog);
+}
+
+function InstallHelpDialog({ close }) {
+  return html`<${Modal} title=${t('app.install')} close=${close} icon="download" foot=${html`<${Btn} kind="primary" onClick=${() => close()}>${t('common.ok')}</${Btn}>`}>
+    <ol class="steps-list">
+      <li>${t('app.ios_step1')}</li>
+      <li>${t('app.ios_step2')}</li>
+      <li>${t('app.ios_step3')}</li>
+    </ol>
+  </${Modal}>`;
 }
 
 function Routes({ route }) {
@@ -146,7 +281,7 @@ function FirstAllowed() {
   return null;
 }
 
-function Sidebar({ route }) {
+function Sidebar({ route, phone, onClose }) {
   const b = useStore((s) => s.boot);
   const u = useStore((s) => s.user);
   const notif = useStore((s) => s.notifications);
@@ -160,27 +295,29 @@ function Sidebar({ route }) {
     if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
   }, [current]);
   return html`<aside class="sidebar">
-    <div class="brand">
+    ${phone ? html`<${PhoneMenuHead} onClose=${onClose} />` : html`<div class="brand">
       <div class="brand-mark">${company.logo_url ? html`<img src=${company.logo_url} alt="" />` : 'R'}</div>
       <div class="brand-text"><div class="brand-name">Recep Muhasebe</div><div class="brand-sub" dir="auto">${company.name || ''}</div></div>
-    </div>
+    </div>`}
     <nav class="nav" aria-label=${t('nav.menu')}>
       ${NAV.map((g) => {
         const items = g.items.filter(allowed);
         if (!items.length) return null;
         return html`<div><div class="nav-label">${t(g.group)}</div>
-          ${items.map((it) => html`<a class=${`nav-item ${isActive(it.path) ? 'active' : ''}`} href=${'#' + it.path} title=${t(it.label)}>
+          ${items.map((it) => html`<a class=${`nav-item ${isActive(it.path) ? 'active' : ''}`} href=${'#' + it.path} title=${t(it.label)}
+            onClick=${phone ? (e) => { e.preventDefault(); onClose(); setTimeout(() => navigate(it.path), 0); } : onClose}>
             <${Icon} name=${it.icon} /><span>${t(it.label)}</span>
             ${it.path === '/docs/service' && svcCount ? html`<span class="nav-badge">${svcCount}</span>` : null}
           </a>`)}</div>`;
       })}
+      ${phone && html`<${PhoneMenuFoot} onClose=${onClose} />`}
     </nav>
-    <div class="side-foot">
+    ${!phone && html`<div class="side-foot">
       <div class="avatar">${initials(u && u.full_name)}</div>
       <div class="who"><b>${u && u.full_name}</b><span>${u && dn(u.role_name)}</span></div>
       <button class="chrome-btn" title=${t('nav.collapse')} onClick=${() => { const v = !store.state.sidebarCollapsed; store.set({ sidebarCollapsed: v }); setPrefs('sidebar_collapsed', v); }}>
         <${Icon} name=${store.state.sidebarCollapsed ? 'chevron-right' : 'chevron-left'} size="sm" /></button>
-    </div>
+    </div>`}
   </aside>`;
 }
 
@@ -209,14 +346,12 @@ function Topbar({ onMenu }) {
   const route = useRoute();
   const title = useStore((s) => s.pageTitle);
   const crumbs = useStore((s) => s.crumbs);
-  useBackKeys();
   const showBack = route.path !== '/' || canGoBack();
   const b = useStore((s) => s.boot);
   const u = useStore((s) => s.user);
   const dc = useStore((s) => s.displayCurrency);
   const notifs = useStore((s) => s.notifications);
   const iqd = ((b && b.currencies) || []).find((c) => c.code === 'IQD');
-  useNotifications();
   const unread = notifs.filter((n) => !n.read).length;
   const langItems = LANGS.map((l) => ({ label: `${l.code === getLang() ? '✓ ' : ''}${l.name}`, onClick: () => setLang(l.code) }));
   return html`<header class="topbar">
@@ -384,7 +519,8 @@ function GlobalSearch({ close }) {
     if (e.key === 'Enter' && flat[hi]) { close(); navigate(flat[hi].go); }
   };
   return html`<${Modal} title=${t('search.global')} close=${close} size="wide" icon="search">
-    <div class="input-wrap"><${Icon} name="search" /><input class="input lg" autoFocus value=${q} placeholder=${t('search.placeholder')} onInput=${(e) => setQ(e.target.value)} onKeyDown=${onKey} /></div>
+    <div class=${`input-wrap ${canScan() ? 'has-tools' : ''}`}><${Icon} name="search" /><input class="input lg" type="search" enterkeyhint="search" autoFocus value=${q} placeholder=${t('search.placeholder')} onInput=${(e) => setQ(e.target.value)} onKeyDown=${onKey} />
+      ${canScan() && html`<div class="input-tools"><${ScanButton} onCode=${setQ} /></div>`}</div>
     <div class="mt-12">
       ${!res ? html`<p class="small muted">${t('search.hint')}</p>` : !flat.length ? html`<${Empty} title=${t('common.no_results')} />`
         : html`<div class="mini-list">${flat.map((r, i) => html`<div class=${`mini-row link ${i === hi ? 'selected' : ''}`} style=${i === hi ? 'background:var(--info-soft)' : ''}
@@ -394,7 +530,7 @@ function GlobalSearch({ close }) {
 }
 
 /* ------------------------------------------------------------------ account */
-function ChangeSecretDialog({ close }) {
+export function ChangeSecretDialog({ close }) {
   const [cur, setCur] = useState('');
   const [pin, setPin] = useState('');
   const [pw, setPw] = useState('');
@@ -423,7 +559,7 @@ function useIdleLock() {
     if (!mins) return undefined;
     let last = Date.now();
     const bump = () => { last = Date.now(); };
-    const evs = ['mousemove', 'keydown', 'mousedown', 'touchstart'];
+    const evs = ['mousemove', 'keydown', 'mousedown', 'touchstart', 'rm-activity'];
     evs.forEach((e) => window.addEventListener(e, bump, { passive: true }));
     const tm = setInterval(() => { if (Date.now() - last > mins * 60000 && !store.state.locked) store.set({ locked: true }); }, 15000);
     return () => { evs.forEach((e) => window.removeEventListener(e, bump)); clearInterval(tm); };

@@ -8,10 +8,13 @@ import { useTitle } from '../core/page.js';
 import { navigate } from '../core/router.js';
 import { money, num, qty as fqty, convert, round, decimals, usdIqd, today, dateTime, date as fdate, pct as fpct, rateText } from '../core/format.js';
 import {
-  Icon, Btn, IconBtn, Modal, Drawer, Field, Input, NumInput, Select, Segmented, Pill, Money, Balances, Empty, Loading, Notice,
-  openModal, toast, errToast, confirmDialog, useHotkeys, useDebounced,
+  Icon, Btn, IconBtn, Modal, Drawer, Field, Input, NumInput, Select, Segmented, Pill, Money, Balances, Empty, Loading, Notice, MenuButton,
+  openModal, toast, errToast, confirmDialog, useHotkeys, useDebounced, usePhone, isPhone,
 } from '../core/ui.js';
+import { ScanButton } from '../core/scanner.js';
+import { back as goBack } from '../core/router.js';
 import { printDoc, shareDoc } from '../core/docprint.js';
+import { printsOnOwnPage } from '../core/print.js';
 import { PartnerPicker, VehiclePicker, StaffSelect, PriceListSelect, defaultAccount, account, defaultWarehouseId, defaultPriceListId, loadPartner } from './pickers.js';
 import { DiscountInput, FindInvoiceDialog } from './docs.js';
 import { dn } from '../core/names.js';
@@ -19,6 +22,10 @@ import { dn } from '../core/names.js';
 const PARK_KEY = 'rm_pos_parked';
 function parkedList() { try { return JSON.parse(localStorage.getItem(PARK_KEY) || '[]'); } catch (e) { return []; } }
 function saveParked(list) { try { localStorage.setItem(PARK_KEY, JSON.stringify(list)); } catch (e) { /* storage full or blocked */ } }
+// the sale being rung up, kept while the program is open: leaving the screen by mistake (a phone's Back) loses nothing
+const CART_KEY = 'rm_pos_cart';
+function savedCart() { try { return JSON.parse(sessionStorage.getItem(CART_KEY) || 'null'); } catch (e) { return null; } }
+function keepCart(c) { try { if (c) sessionStorage.setItem(CART_KEY, JSON.stringify(c)); else sessionStorage.removeItem(CART_KEY); } catch (e) { /* storage blocked */ } }
 
 let seq = 0;
 const key = () => `c${++seq}${Date.now() % 100000}`;
@@ -65,11 +72,23 @@ export function Pos({ query = {} }) {
   const [parked, setParked] = useState(parkedList());
   const searchRef = useRef(null);
   const dq = useDebounced(q, 160);
+  const phone = usePhone();
+  // phone: the cart is a sheet over the products; it has its own place in the history, so Back closes it
+  const cartOpen = phone && query.cart === '1';
+  const openCart = () => navigate('/pos', { cart: 1 });
+  const closeCart = () => { if (query.cart === '1') goBack('/pos'); };
 
   useEffect(() => { setRate(usdIqd()); }, [bootData && bootData.currencies]);
   useEffect(() => { setPrefs('pos_currency', currency); }, [currency]);
-  const focusSearch = () => setTimeout(() => searchRef.current && searchRef.current.focus(), 0);
+  // the search box gets the cursor at the counter; on a phone that would only pop the keyboard up
+  const focusSearch = () => { if (!isPhone()) setTimeout(() => searchRef.current && searchRef.current.focus(), 0); };
   useEffect(focusSearch, []);
+  // a sale left unfinished on this screen comes back (only to the same user)
+  useEffect(() => {
+    if (query.resume) return;
+    const c = savedCart();
+    if (c && c.lines && c.lines.length && me && c.user_id === me.id) restore(c);
+  }, []);
 
   // resume a parked sale
   useEffect(() => {
@@ -95,6 +114,10 @@ export function Pos({ query = {} }) {
     run();
     return () => { alive = false; };
   }, [dq, cat, priceListId]);
+
+  useEffect(() => {
+    keepCart(lines.length ? { user_id: me && me.id, currency, priceListId, customer, vehicle, km, lines, docDisc, notes } : null);
+  }, [lines, customer, vehicle, km, docDisc, notes, currency, priceListId]);
 
   /* ---------------- cart helpers */
   // a product with its own rate is priced with that rate, whatever the day's rate is
@@ -142,9 +165,20 @@ export function Pos({ query = {} }) {
       else if (!r.rows.length) toast(t('pos.not_found', { code: c }), 'err');
     } catch (e) { errToast(e); }
   };
+  /** camera: each code read adds one of that product; the answer is shown under the camera picture */
+  const scanCode = async (code) => {
+    let p = null;
+    try { p = (await api.get(`/api/products/by-code/${encodeURIComponent(code)}`, { price_list_id: priceListId, warehouse_id: warehouseId })).product; } catch (e) { /* try by text */ }
+    if (!p) {
+      try { const r = await api.get('/api/products', { q: code, limit: 2, price_list_id: priceListId, warehouse_id: warehouseId }); if (r.rows.length === 1) p = r.rows[0]; } catch (e) { /* not found */ }
+    }
+    if (!p) return { ok: false, text: t('pos.not_found', { code }) };
+    addProduct(p, 1);
+    return { ok: true, text: t('pos.added', { name: p.name }) };
+  };
   const setLine = (k, patch) => setLines((ls) => ls.map((l) => (l.key === k ? { ...l, ...patch } : l)));
   const removeLine = (k) => setLines((ls) => ls.filter((l) => l.key !== k));
-  const clearCart = () => { setLines([]); setDocDisc({ amount: 0, pct: null }); setCustomer(walkin()); setVehicle(null); setKm(null); setNotes(''); setPriceListId(defaultPriceListId()); focusSearch(); };
+  const clearCart = () => { setLines([]); setDocDisc({ amount: 0, pct: null }); setCustomer(walkin()); setVehicle(null); setKm(null); setNotes(''); setPriceListId(defaultPriceListId()); keepCart(null); focusSearch(); };
 
   const changeCurrency = (cur) => {
     if (cur === currency) return;
@@ -250,7 +284,9 @@ export function Pos({ query = {} }) {
     if (res && res.doc) {
       const doc = res.doc;
       clearCart();
-      if (posCfg.auto_print_receipt) printDoc(doc, 'auto', { silent: true });
+      closeCart();
+      // a phone or tablet prints on its own screen: only when asked (the sale's summary stays in view)
+      if (posCfg.auto_print_receipt && !printsOnOwnPage()) printDoc(doc, 'auto', { silent: true });
       openModal(DoneDialog, { doc, change: res.change, changeCurrency: res.changeCurrency }).then(() => focusSearch());
     } else focusSearch();
   };
@@ -298,16 +334,24 @@ export function Pos({ query = {} }) {
 
   const cats = (boot().categories || []);
   const other = currency === 'USD' ? 'IQD' : 'USD';
-  return html`<div class="pos-screen">
+  const doReturn = () => openModal(FindInvoiceDialog, { type: 'sale' }).then((d) => d && navigate('/docs/sale_return/new', { from: d.id }));
+  return html`<div class=${`pos-screen ${phone ? 'phone' : ''} ${cartOpen ? 'cart-open' : ''}`}>
     <div class="pos-left">
       <div class="pos-bar">
         <div class="pos-scan"><${Icon} name="scan-barcode" />
-          <input ref=${searchRef} class="input" value=${q} placeholder=${t('pos.scan_ph')} autocomplete="off" onInput=${(e) => setQ(e.target.value)} onKeyDown=${onSearchKey} aria-label=${t('pos.scan_ph')} />
+          <input ref=${searchRef} class="input" type="search" enterkeyhint="search" value=${q} placeholder=${t(phone ? 'pos.search_ph_phone' : 'pos.scan_ph')} autocomplete="off" onInput=${(e) => setQ(e.target.value)} onKeyDown=${onSearchKey} aria-label=${t('pos.scan_ph')} />
         </div>
+        <${ScanButton} big continuous onCode=${scanCode} title=${t('scan.title_pos')} />
+        ${phone ? html`<${MenuButton} iconOnly icon="ellipsis" title=${t('common.more')} items=${[
+          { label: t('pos.add_labor'), icon: 'wrench', onClick: addLabor },
+          { label: t('pos.park'), icon: 'circle-pause', onClick: park, disabled: !lines.length },
+          { label: t('pos.recent'), icon: 'history', onClick: () => openModal(RecentDrawer, {}) },
+          can('returns.create') && { label: t('pos.return'), icon: 'undo-2', onClick: doReturn },
+        ]} />` : html`
         <${Btn} icon="wrench" onClick=${addLabor} title=${t('pos.add_labor')}>${t('pos.labor')}</${Btn}>
         <${Btn} icon="circle-pause" onClick=${park} disabled=${!lines.length} kbd="F8">${t('pos.park')}</${Btn}>
         <${Btn} icon="history" onClick=${() => openModal(RecentDrawer, {})}>${t('pos.recent')}</${Btn}>
-        ${can('returns.create') && html`<${Btn} icon="undo-2" onClick=${() => openModal(FindInvoiceDialog, { type: 'sale' }).then((d) => d && navigate('/docs/sale_return/new', { from: d.id }))}>${t('pos.return')}</${Btn}>`}
+        ${can('returns.create') && html`<${Btn} icon="undo-2" onClick=${doReturn}>${t('pos.return')}</${Btn}>`}`}
       </div>
       ${cats.length > 0 && html`<div class=${`pos-cats ${catsMore ? 'more' : ''}`} ref=${catsRef} onScroll=${checkCats}>
         <button type="button" class=${`chip ${!cat ? 'on' : ''}`} onClick=${() => setCat('')}>${dq.trim() ? t('pos.all_results') : t('pos.popular')}</button>
@@ -332,7 +376,21 @@ export function Pos({ query = {} }) {
       </div>
     </div>
 
-    <div class="pos-right">
+    ${phone && html`<div class="pos-cartbar">
+      <button type="button" class="cb-open" onClick=${openCart} aria-label=${t('pos.cart')}>
+        <span class="cb-icon"><${Icon} name="shopping-cart" />${lines.length > 0 && html`<i class="cb-count" key=${calc.count}>${fqty(calc.count)}</i>`}</span>
+        <span class="cb-text"><b class="num">${money(calc.total, currency)}</b><small>${lines.length ? t('pos.see_cart') : t('pos.empty_cart')}</small></span>
+        <${Icon} name="chevron-up" cls="cb-chev" />
+      </button>
+      <${Btn} kind="primary" size="lg" icon="banknote" onClick=${pay} disabled=${!lines.length || discOver || blockStock}>${t('pos.pay')}</${Btn}>
+    </div>`}
+
+    <div class="pos-right" aria-hidden=${phone && !cartOpen ? 'true' : undefined}>
+      ${phone && html`<div class="cart-sheet-head">
+        <button type="button" class="tb-btn" onClick=${closeCart} aria-label=${t('common.close')}><${Icon} name="chevron-down" /></button>
+        <b class="grow">${t('pos.cart')}</b>
+        <span class="small">${t('pos.items_n', { n: fqty(calc.count) })}</span>
+      </div>`}
       <div class="cart-head">
         <div class="row gap-8">
           <div class="grow"><${PartnerPicker} value=${customer} onChange=${chooseCustomer} kind="customer" placeholder=${t('pos.customer_ph')} /></div>

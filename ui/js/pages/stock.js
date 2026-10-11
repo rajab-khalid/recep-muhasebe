@@ -8,7 +8,8 @@ import { navigate } from '../core/router.js';
 import { money, num, qty as fqty, convert, today, date as fdate, dateTime, round, display } from '../core/format.js';
 import {
   Icon, Btn, IconBtn, Modal, Field, Input, NumInput, Select, Segmented, Check, Table, Panel, Empty, Loading, Notice, Pill, Money, Tabs, KV,
-  DateRange, periodRange, SearchBox, useAsync, useDebounced, openModal, toast, errToast, confirmDialog, DateInput } from '../core/ui.js';
+  DateRange, periodRange, SearchBox, useAsync, useDebounced, openModal, toast, errToast, confirmDialog, DateInput, Filters, usePhone } from '../core/ui.js';
+import { ScanButton } from '../core/scanner.js';
 import { printTables } from '../core/print.js';
 import { downloadXlsx } from '../core/xlsx.js';
 import { whatsapp } from '../core/docprint.js';
@@ -80,12 +81,14 @@ function Levels() {
   return html`<div>
     <div class="toolbar">
       <${SearchBox} value=${f.q} onValue=${(v) => setF({ ...f, q: v })} cls="search" />
+      <${Filters} active=${[f.warehouse_id, f.category_id, f.brand_id, f.only_in_stock].filter(Boolean).length}>
       ${(boot().warehouses || []).length > 1 && html`<div style="width:170px"><${WarehouseSelect} value=${f.warehouse_id} onValue=${(v) => setF({ ...f, warehouse_id: v })} placeholder=${t('product.all_warehouses')} /></div>`}
       <div style="width:160px"><${CategorySelect} value=${f.category_id} onValue=${(v) => setF({ ...f, category_id: v })} placeholder=${t('product.all_categories')} /></div>
       <div style="width:150px"><${BrandSelect} value=${f.brand_id} onValue=${(v) => setF({ ...f, brand_id: v })} placeholder=${t('product.all_brands')} /></div>
+      <${Check} checked=${f.only_in_stock} onValue=${(v) => setF({ ...f, only_in_stock: v })} label=${t('stock.only_in_stock')} />
+      </${Filters}>
       <${Segmented} value=${f.state} onValue=${(v) => setF({ ...f, state: v })} options=${[
         { value: '', label: t('common.all') }, { value: 'critical', label: `${t('stock.state.critical')} (${counts.critical || 0})` }, { value: 'low', label: `${t('stock.state.low')} (${counts.low || 0})` }]} />
-      <${Check} checked=${f.only_in_stock} onValue=${(v) => setF({ ...f, only_in_stock: v })} label=${t('stock.only_in_stock')} />
       <div class="toolbar-end">
       <${IconBtn} icon="printer" title=${t('stock.count_sheet')} onClick=${printSheet} />
       <${IconBtn} icon="file-spreadsheet" title=${t('common.export_excel')} onClick=${exportX} />
@@ -100,12 +103,12 @@ function Levels() {
     <div class="panel">${loading && !data ? html`<${Loading} />` : error ? html`<div class="panel-body"><${Notice} kind="err">${error.message}</${Notice}></div>` : html`<${Table}
       rows=${rows.slice(0, 1500)} onRow=${(r) => navigate(`/products/${r.id}`)}
       columns=${[
-        { key: 'name', label: t('product.name'), render: (r) => html`<div class="cell-name" dir="auto">${r.name}</div><div class="sub">${[r.code, r.brand_name, r.category_name].filter(Boolean).join(' · ')}</div>` },
-        { key: 'shelf', label: t('product.shelf'), render: (r) => r.shelf || '' },
-        { key: 'qty', label: t('product.stock'), align: 'r', render: (r) => html`<span class=${`num strong ${r.state === 'critical' ? 'neg' : r.state === 'low' ? 'warn-text' : ''}`}>${fqty(r.qty)}</span> <span class="tiny muted">${dn(r.unit) || ''}</span>` },
-        { key: 'min', label: t('product.min_stock'), align: 'r', render: (r) => html`<span class="num muted">${r.min_stock ? fqty(r.min_stock) : '—'}</span>` },
-        { key: 'state', label: t('doc.status'), render: (r) => html`<${Pill} kind=${r.state === 'critical' ? 'out' : r.state === 'low' ? 'warn' : 'in'} dot>${t(`stock.state.${r.state}`)}</${Pill}>` },
-        hasValue && { key: 'value', label: `${t('stock.value')} (${mode})`, align: 'r', render: (r) => html`<span class="num">${money(r.value, mode)}</span>` },
+        { key: 'name', label: t('product.name'), mobile: 'title', render: (r) => html`<div class="cell-name" dir="auto">${r.name}</div><div class="sub">${[r.code, r.brand_name, r.category_name].filter(Boolean).join(' · ')}</div>` },
+        { key: 'shelf', label: t('product.shelf'), mobile: 'row', render: (r) => r.shelf || '' },
+        { key: 'qty', label: t('product.stock'), align: 'r', mobile: 'right', render: (r) => html`<span class=${`num strong ${r.state === 'critical' ? 'neg' : r.state === 'low' ? 'warn-text' : ''}`}>${fqty(r.qty)}</span> <span class="tiny muted">${dn(r.unit) || ''}</span>` },
+        { key: 'min', label: t('product.min_stock'), align: 'r', mobile: 'row', render: (r) => (r.min_stock ? html`<span class="num muted">${fqty(r.min_stock)}</span>` : '') },
+        { key: 'state', label: t('doc.status'), mobile: 'subright', render: (r) => html`<${Pill} kind=${r.state === 'critical' ? 'out' : r.state === 'low' ? 'warn' : 'in'} dot>${t(`stock.state.${r.state}`)}</${Pill}>` },
+        hasValue && { key: 'value', label: `${t('stock.value')} (${mode})`, align: 'r', mobile: 'row', render: (r) => html`<span class="num">${money(r.value, mode)}</span>` },
       ]} />${rows.length > 1500 ? html`<div class="panel-foot small muted">${t('stock.showing_first', { n: 1500, total: rows.length })}</div>` : null}`}</div>
   </div>`;
 }
@@ -121,19 +124,21 @@ function Moves({ query }) {
   return html`<div>
     <div class="toolbar">
       <${SearchBox} value=${f.q} onValue=${(v) => setF({ ...f, q: v })} cls="search" />
+      <${Filters} active=${[f.from !== r0.from || f.to !== r0.to, f.kind, f.warehouse_id].filter(Boolean).length}>
       <${DateRange} from=${f.from} to=${f.to} onChange=${(r) => setF({ ...f, ...r })} />
       <div style="width:170px"><${Select} value=${f.kind} onValue=${(v) => setF({ ...f, kind: v })} options=${[{ value: '', label: t('stock.all_kinds') }, ...MOVE_KINDS.map((k) => ({ value: k, label: t(`move.stock.${k}`) }))]} /></div>
       ${(boot().warehouses || []).length > 1 && html`<div style="width:170px"><${WarehouseSelect} value=${f.warehouse_id} onValue=${(v) => setF({ ...f, warehouse_id: v })} placeholder=${t('product.all_warehouses')} /></div>`}
+      </${Filters}>
     </div>
     <div class="panel">${loading && !data ? html`<${Loading} />` : html`<${Table} rows=${rows.slice(0, 2000)} onRow=${(r) => r.doc_id && navigate(`/doc/${r.doc_id}`)}
       columns=${[
-        { key: 'date', label: t('common.date'), render: (r) => fdate(r.date) },
-        { key: 'product', label: t('product.name'), render: (r) => html`<span dir="auto">${r.product_name}</span><div class="sub">${r.code || ''}</div>` },
-        { key: 'kind', label: t('common.type'), render: (r) => html`${t(`move.stock.${r.kind}`)}${r.reason && r.kind === 'adjust' ? html`<div class="sub">${t(`adjust.reason.${r.reason}`)}</div>` : null}` },
-        { key: 'doc', label: t('doc.no'), render: (r) => r.doc_no || '' },
-        (boot().warehouses || []).length > 1 && { key: 'wh', label: t('doc.warehouse'), render: (r) => r.warehouse_name },
-        { key: 'qty', label: t('print.col.qty'), align: 'r', render: (r) => html`<span class=${`num strong ${r.qty > 0 ? 'pos' : 'neg'}`}>${r.qty > 0 ? '+' : ''}${fqty(r.qty)}</span>` },
-        showCost && { key: 'cost', label: t('doc.unit_cost'), align: 'r', render: (r) => html`<span class="num small muted">${money(r.unit_cost_usd, 'USD')}</span>` },
+        { key: 'date', label: t('common.date'), mobile: 'sub', render: (r) => fdate(r.date) },
+        { key: 'product', label: t('product.name'), mobile: 'title', render: (r) => html`<span dir="auto">${r.product_name}</span><div class="sub">${r.code || ''}</div>` },
+        { key: 'kind', label: t('common.type'), mobile: 'sub', render: (r) => html`${t(`move.stock.${r.kind}`)}${r.reason && r.kind === 'adjust' ? html`<div class="sub">${t(`adjust.reason.${r.reason}`)}</div>` : null}` },
+        { key: 'doc', label: t('doc.no'), mobile: 'sub', render: (r) => r.doc_no || '' },
+        (boot().warehouses || []).length > 1 && { key: 'wh', label: t('doc.warehouse'), mobile: 'row', render: (r) => r.warehouse_name },
+        { key: 'qty', label: t('print.col.qty'), align: 'r', mobile: 'right', render: (r) => html`<span class=${`num strong ${r.qty > 0 ? 'pos' : 'neg'}`}>${r.qty > 0 ? '+' : ''}${fqty(r.qty)}</span>` },
+        showCost && { key: 'cost', label: t('doc.unit_cost'), align: 'r', mobile: 'subright', render: (r) => html`<span class="num small muted">${money(r.unit_cost_usd, 'USD')}</span>` },
       ]} />`}</div>
   </div>`;
 }
@@ -148,7 +153,7 @@ function StockDocs({ type }) {
     <div class="toolbar">
       <${DateRange} from=${f.from} to=${f.to} onChange=${(r) => setF(r)} />
       <div class="toolbar-end">
-      ${canNew && html`<${Btn} kind="primary" icon="plus" disabled=${type === 'transfer' && (boot().warehouses || []).filter((w) => w.active).length < 2} onClick=${() => navigate(`/docs/${type}/new`)}>${t(`doc.new.${type}`)}</${Btn}>`}
+      ${canNew && html`<${Btn} kind="primary" cls="fab" icon="plus" disabled=${type === 'transfer' && (boot().warehouses || []).filter((w) => w.active).length < 2} onClick=${() => navigate(`/docs/${type}/new`)}>${t(`doc.new.${type}`)}</${Btn}>`}
       </div>
     </div>
     ${type === 'transfer' && (boot().warehouses || []).filter((w) => w.active).length < 2 && html`<${Notice} cls="mb-12">${t('stock.one_warehouse')}</${Notice}>`}
@@ -166,13 +171,13 @@ function Counts() {
     <div class="panel">${loading && !data ? html`<${Loading} />` : html`<${Table} rows=${data || []} onRow=${(r) => navigate(`/stock/count/${r.id}`)}
       empty=${html`<${Empty} icon="clipboard-check" title=${t('stock.no_counts')} />`}
       columns=${[
-        { key: 'no', label: t('doc.no'), render: (r) => html`<span class="strong">${r.no}</span>` },
-        { key: 'date', label: t('common.date'), render: (r) => fdate(r.date) },
-        { key: 'wh', label: t('doc.warehouse'), render: (r) => r.warehouse_name },
-        { key: 'progress', label: t('stock.progress'), render: (r) => html`<div class="row gap-8"><div class="meter" style="width:120px"><i style=${`width:${r.line_count ? r.counted_count / r.line_count * 100 : 0}%`}></i></div><span class="small num">${r.counted_count}/${r.line_count}</span></div>` },
-        { key: 'diff', label: t('stock.differences'), align: 'r', render: (r) => (r.diff_count ? html`<span class="num warn-text strong">${r.diff_count}</span>` : html`<span class="muted">0</span>`) },
-        { key: 'status', label: t('doc.status'), render: (r) => html`<${Pill} kind=${r.status === 'posted' ? 'in' : 'warn'}>${t(`stock.count_status.${r.status}`)}</${Pill}>` },
-        { key: 'user', label: t('common.user'), render: (r) => html`<span class="small muted">${r.user_name || ''}</span>` },
+        { key: 'no', label: t('doc.no'), mobile: 'title', render: (r) => html`<span class="strong">${r.no}</span>` },
+        { key: 'date', label: t('common.date'), mobile: 'sub', render: (r) => fdate(r.date) },
+        { key: 'wh', label: t('doc.warehouse'), mobile: 'sub', render: (r) => r.warehouse_name },
+        { key: 'progress', label: t('stock.progress'), mobile: 'row', render: (r) => html`<div class="row gap-8"><div class="meter" style="width:120px"><i style=${`width:${r.line_count ? r.counted_count / r.line_count * 100 : 0}%`}></i></div><span class="small num">${r.counted_count}/${r.line_count}</span></div>` },
+        { key: 'diff', label: t('stock.differences'), align: 'r', mobile: 'row', render: (r) => (r.diff_count ? html`<span class="num warn-text strong">${r.diff_count}</span>` : html`<span class="muted">0</span>`) },
+        { key: 'status', label: t('doc.status'), mobile: 'right', render: (r) => html`<${Pill} kind=${r.status === 'posted' ? 'in' : 'warn'}>${t(`stock.count_status.${r.status}`)}</${Pill}>` },
+        { key: 'user', label: t('common.user'), mobile: 'hide', render: (r) => html`<span class="small muted">${r.user_name || ''}</span>` },
       ]} />`}</div>
   </div>`;
 }
@@ -223,6 +228,7 @@ export function CountPage({ id }) {
   const pending = useRef({});
   const timer = useRef(null);
   const scanRef = useRef(null);
+  const phone = usePhone();
   useTitle(c ? `${t('stock.count')} ${c.no}` : t('common.loading'), [{ label: t('stock.counts'), href: '#/stock/counts' }]);
   const load = () => api.get(`/api/stock/counts/${id}`).then(setC).catch(setErr);
   useEffect(() => { load(); }, [id]);
@@ -241,12 +247,16 @@ export function CountPage({ id }) {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(flush, 700);
   };
-  const onScan = async (e) => {
+  const onScan = (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
     const code = scan.trim();
     if (!code) return;
     setScan('');
+    applyCode(code);
+  };
+  /** a scanned or typed code counts one more of that product (a product not in the count yet is added) */
+  const applyCode = async (code) => {
     let line = c.lines.find((l) => l.barcode === code || l.code === code);
     if (!line) {
       try {
@@ -258,13 +268,15 @@ export function CountPage({ id }) {
           const n = await api.post(`/api/stock/counts/${id}/lines`, { lines: [{ product_id: r.product.id, counted: 1 }] });
           setC(n);
           toast(t('stock.added_to_count', { name: r.product.name }));
-          return;
+          return { ok: true, text: t('stock.added_to_count', { name: r.product.name }) };
         }
       } catch (x) { /* not found */ }
     }
-    if (!line) { toast(t('pos.not_found', { code }), 'err'); return; }
-    setCounted(line.product_id, (Number(line.counted) || 0) + 1);
+    if (!line) { toast(t('pos.not_found', { code }), 'err'); return { ok: false, text: t('pos.not_found', { code }) }; }
+    const n = (Number(line.counted) || 0) + 1;
+    setCounted(line.product_id, n);
     setTimeout(() => { const el = document.getElementById(`cnt-${line.product_id}`); if (el) el.scrollIntoView({ block: 'center' }); }, 30);
+    return { ok: true, text: `${line.name}: ${fqty(n)}` };
   };
 
   if (err) return html`<div class="page"><${Notice} kind="err">${err.message}</${Notice}></div>`;
@@ -317,14 +329,31 @@ export function CountPage({ id }) {
       ${showCost && html`<div class="panel stat"><div class="k">${t('stock.diff_value')}</div><div class=${`v ${diffValue < 0 ? 'neg' : diffValue > 0 ? 'pos' : ''}`}>${display(diffValue, { sign: true })}</div></div>`}
     </div>
     ${draft && html`<div class="panel"><div class="panel-body row gap-12 wrap">
-      <div class="input-wrap" style="flex:1 1 320px"><${Icon} name="scan-barcode" /><input ref=${scanRef} class="input lg" value=${scan} onInput=${(e) => setScan(e.target.value)} onKeyDown=${onScan} placeholder=${t('stock.scan_ph')} autoFocus /></div>
+      <div class="row gap-8" style="flex:1 1 320px">
+        <div class="input-wrap grow"><${Icon} name="scan-barcode" /><input ref=${scanRef} class="input lg" value=${scan} onInput=${(e) => setScan(e.target.value)} onKeyDown=${onScan} placeholder=${t('stock.scan_ph')} autoFocus=${!phone} /></div>
+        <${ScanButton} big continuous onCode=${applyCode} />
+      </div>
       <span class="small muted" style="max-width:420px">${t('stock.scan_hint')}</span>
     </div></div>`}
     <div class="toolbar" style="margin:0">
       <${SearchBox} value=${q} onValue=${setQ} cls="search" />
       <${Segmented} value=${filter} onValue=${setFilter} options=${[{ value: 'all', label: t('common.all') }, { value: 'uncounted', label: t('stock.uncounted') }, { value: 'diff', label: t('stock.differences') }]} />
     </div>
-    <div class="panel"><div class="table-wrap"><table class="tbl compact">
+    <div class="panel">${phone ? html`<div class="mcards">${lines.slice(0, 2000).map((l) => {
+        const d = diffOf(l);
+        return html`<div class="mcard" id=${`cnt-${l.product_id}`} key=${l.product_id}>
+          <div class="mc-top">
+            <div class="mc-main"><div class="mc-title" dir="auto">${l.name}</div>
+              <div class="mc-sub">${[l.code, l.barcode, l.shelf ? `${t('product.shelf')}: ${l.shelf}` : ''].filter(Boolean).map((x) => html`<span>${x}</span>`)}</div></div>
+            <div class="mc-end"><div class=${`mc-right num ${d > 0 ? 'pos' : d < 0 ? 'neg' : ''}`}>${d === null ? '' : d === 0 ? '0' : `${d > 0 ? '+' : ''}${fqty(d)}`}</div></div>
+          </div>
+          <div class="count-row">
+            <span class="small muted">${draft ? t('stock.system_now') : t('stock.system_qty')}: <b class="num" style="color:var(--ink)">${fqty(cur(l))}</b></span>
+            ${draft ? html`<label class="count-box"><span>${t('stock.counted')}</span><${NumInput} size="sm" value=${l.counted} onValue=${(v) => setCounted(l.product_id, v)} dec=${3} /></label>`
+              : html`<span class="small">${t('stock.counted')}: <b class="num">${l.counted != null ? fqty(l.counted) : '—'}</b></span>`}
+          </div>
+        </div>`;
+      })}</div>` : html`<div class="table-wrap"><table class="tbl compact">
       <thead><tr><th>${t('product.shelf')}</th><th>${t('product.name')}</th><th class="r">${draft ? t('stock.system_now') : t('stock.system_qty')}</th><th class="r" style="width:140px">${t('stock.counted')}</th><th class="r">${t('stock.diff')}</th></tr></thead>
       <tbody>${lines.slice(0, 2000).map((l) => {
         const d = diffOf(l);
@@ -335,7 +364,7 @@ export function CountPage({ id }) {
           <td>${draft ? html`<${NumInput} size="sm" value=${l.counted} onValue=${(v) => setCounted(l.product_id, v)} dec=${3} />` : html`<div class="r num">${l.counted != null ? fqty(l.counted) : '—'}</div>`}</td>
           <td class=${`r num strong ${d > 0 ? 'pos' : d < 0 ? 'neg' : ''}`}>${d === null ? '' : d === 0 ? '0' : `${d > 0 ? '+' : ''}${fqty(d)}`}</td>
         </tr>`;
-      })}</tbody></table></div></div>
+      })}</tbody></table></div>`}</div>
   </div>`;
 }
 
@@ -431,9 +460,9 @@ function Suggestions() {
     <div class="panel">${loading && !data ? html`<${Loading} />` : html`<${Table} rows=${rows}
       empty=${html`<${Empty} icon="circle-check" title=${t('stock.no_suggestions')} />`}
       columns=${[
-        { key: 'sel', label: '', cls: 'w-actions', render: (r) => html`<input type="checkbox" checked=${sel.has(r.id)} onChange=${() => { const n = new Set(sel); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); setSel(n); }} />` },
-        { key: 'name', label: t('product.name'), render: (r) => html`<a href=${`#/products/${r.id}`} dir="auto">${r.name}</a><div class="sub">${r.code || ''}</div>` },
-        { key: 'qty', label: t('product.stock'), align: 'r', render: (r) => html`<span class=${`num strong ${r.state === 'critical' ? 'neg' : 'warn-text'}`}>${fqty(r.qty)}</span><div class="sub">${t('product.min')}: ${fqty(r.min_level)}</div>` },
+        { key: 'sel', label: '', cls: 'w-actions', mobile: 'lead', render: (r) => html`<input type="checkbox" checked=${sel.has(r.id)} onChange=${() => { const n = new Set(sel); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); setSel(n); }} />` },
+        { key: 'name', label: t('product.name'), mobile: 'title', render: (r) => html`<a href=${`#/products/${r.id}`} dir="auto">${r.name}</a><div class="sub">${r.code || ''}</div>` },
+        { key: 'qty', label: t('product.stock'), align: 'r', mobile: 'right', render: (r) => html`<span class=${`num strong ${r.state === 'critical' ? 'neg' : 'warn-text'}`}>${fqty(r.qty)}</span><div class="sub">${t('product.min')}: ${fqty(r.min_level)}</div>` },
         { key: 'sold', label: t('stock.sold_in', { n: days }), align: 'r', render: (r) => html`<span class="num">${fqty(r.sold)}</span><div class="sub">${t('stock.per_day', { n: num(r.daily, 2) })}</div>` },
         { key: 'left', label: t('stock.days_left'), align: 'r', render: (r) => (r.days_left === null ? html`<span class="muted">—</span>` : html`<span class=${`num ${r.days_left < 7 ? 'neg strong' : ''}`}>${r.days_left}</span>`) },
         { key: 'order', label: t('stock.on_order'), align: 'r', render: (r) => (r.on_order ? html`<span class="num">${fqty(r.on_order)}</span>` : '') },

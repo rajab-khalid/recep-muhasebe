@@ -49,6 +49,10 @@ async function request(method, path, body, query) {
   } catch (e) {
     throw new ApiError(0, 'network', t('err.network'));
   }
+  // the shop computer is off or the program is closed: the phone's secure address answers for it
+  if (res.status >= 502 && res.status <= 504 && !(res.headers.get('content-type') || '').includes('application/json')) {
+    throw new ApiError(0, 'network', t('err.network'));
+  }
   const type = res.headers.get('content-type') || '';
   let data = null;
   if (type.includes('application/json')) data = await res.json().catch(() => null);

@@ -10,7 +10,7 @@ import { refreshBoot } from '../core/session.js';
 import { money, num, qty as fqty, convert, date as fdate, today, usdIqd, round, decimals, display, pct as fpct } from '../core/format.js';
 import {
   Icon, Btn, IconBtn, Modal, Field, Input, NumInput, Select, Textarea, Segmented, Check, Table, Panel, Empty, Loading, Notice, Pill, Money, Tabs, KV,
-  SearchBox, MenuButton, Combo, useAsync, useDebounced, openModal, toast, errToast, confirmDialog, promptDialog, readImage, pickFile, sortRows,
+  SearchBox, MenuButton, Combo, useAsync, useDebounced, openModal, toast, errToast, confirmDialog, promptDialog, readImage, pickFile, sortRows, Filters, usePhone,
 } from '../core/ui.js';
 import { barcodeSvg, generateEan13, isEan13 } from '../core/barcode.js';
 import { printHtml, escapeHtml } from '../core/print.js';
@@ -18,6 +18,7 @@ import { downloadXlsx, readSheet } from '../core/xlsx.js';
 import { CategorySelect, BrandSelect, CurrencySelect, WarehouseSelect, PriceListSelect, defaultWarehouseId, defaultPriceListId } from './pickers.js';
 import { DocTable } from './docs.js';
 import { dn } from '../core/names.js';
+import { ScanButton, canScan } from '../core/scanner.js';
 
 const UNITS = ['adet', 'takım', 'set', 'çift', 'kutu', 'metre', 'litre', 'kg', 'paket', 'rulo'];
 const CODE_KINDS = ['oem', 'alt', 'supplier', 'barcode'];
@@ -77,13 +78,16 @@ export function Products({ query = {} }) {
 
   return html`<div class="page">
     <div class="toolbar">
-      <${SearchBox} value=${f.q} onValue=${(v) => setF({ ...f, q: v })} cls="search" placeholder=${t('product.search_ph')} autoFocus />
+      <${SearchBox} value=${f.q} onValue=${(v) => setF({ ...f, q: v })} cls="search" placeholder=${t('product.search_ph')} autoFocus
+        tools=${canScan() && html`<${ScanButton} onCode=${(c) => setF({ ...f, q: c })} />`} />
+      <${Filters} active=${[f.category_id, f.brand_id, f.stock, f.make_id].filter(Boolean).length}>
       <div style="width:170px"><${CategorySelect} value=${f.category_id} onValue=${(v) => setF({ ...f, category_id: v })} placeholder=${t('product.all_categories')} /></div>
       <div style="width:150px"><${BrandSelect} value=${f.brand_id} onValue=${(v) => setF({ ...f, brand_id: v })} placeholder=${t('product.all_brands')} /></div>
       <div style="width:150px"><${Select} value=${f.stock} onValue=${(v) => setF({ ...f, stock: v })} options=${[
         { value: '', label: t('product.stock_all') }, { value: 'in', label: t('product.stock_in') }, { value: 'low', label: t('product.stock_low') },
         { value: 'out', label: t('product.stock_out') }, { value: 'neg', label: t('product.stock_neg') }]} /></div>
       <${Btn} icon="car" kind=${showVeh || f.make_id ? 'dark' : ''} onClick=${() => setShowVeh(!showVeh)}>${t('product.vehicle_filter')}</${Btn}>
+      </${Filters}>
       <div class="toolbar-end">
       <${MenuButton} label=${t('common.more')} icon="sliders-horizontal" items=${[
         { label: t('common.export_excel'), icon: 'file-spreadsheet', onClick: exportX },
@@ -91,7 +95,7 @@ export function Products({ query = {} }) {
         can('products.prices') && { label: t('product.bulk_price'), icon: 'percent', onClick: () => openModal(BulkPriceDialog, { filter: params, count: data ? data.total : 0 }).then((r) => r && reload()) },
         { label: t('product.print_labels_all'), icon: 'tag', onClick: () => openModal(LabelDialog, { products: rows }) },
       ]} />
-      ${can('products.manage') && html`<${Btn} kind="primary" icon="plus" onClick=${() => navigate('/products/new')}>${t('product.new')}</${Btn}>`}
+      ${can('products.manage') && html`<${Btn} kind="primary" cls="fab" icon="plus" onClick=${() => navigate('/products/new')}>${t('product.new')}</${Btn}>`}
       </div>
     </div>
     ${showVeh && html`<div class="panel mb-12"><div class="panel-body row wrap gap-12">
@@ -116,13 +120,13 @@ export function Products({ query = {} }) {
         rows=${rows} onRow=${(r) => navigate(`/products/${r.id}`)}
         empty=${html`<${Empty} icon="package-search" title=${f.q ? t('common.no_results') : t('product.none')} action=${can('products.manage') && !f.q && html`<${Btn} kind="primary" icon="plus" onClick=${() => navigate('/products/new')}>${t('product.new')}</${Btn}>`} />`}
         columns=${[
-          { key: 'sel', label: html`<input type="checkbox" checked=${allOn} onChange=${() => setSel(allOn ? new Set() : new Set(rows.map((r) => r.id)))} aria-label=${t('common.select_all')} />`, cls: 'w-actions',
+          { key: 'sel', mobile: 'hide', label: html`<input type="checkbox" checked=${allOn} onChange=${() => setSel(allOn ? new Set() : new Set(rows.map((r) => r.id)))} aria-label=${t('common.select_all')} />`, cls: 'w-actions',
             render: (r) => html`<input type="checkbox" checked=${sel.has(r.id)} onChange=${() => toggle(r.id)} />` },
-          { key: 'img', label: '', cls: 'w-actions', render: (r) => (r.photo_id ? html`<img class="thumb" src=${`/api/files/${r.photo_id}`} alt="" loading="lazy" />` : html`<div class="thumb" style="display:grid;place-items:center"><${Icon} name=${r.type === 'service' ? 'wrench' : 'package'} size="sm" cls="muted" /></div>`) },
-          { key: 'name', label: t('product.name'), render: (r) => html`<div class="cell-name" dir="auto">${r.name}${!r.active ? html` <${Pill}>${t('common.inactive')}</${Pill}>` : null}</div>
+          { key: 'img', label: '', cls: 'w-actions', mobile: 'lead', render: (r) => (r.photo_id ? html`<img class="thumb" src=${`/api/files/${r.photo_id}`} alt="" loading="lazy" />` : html`<div class="thumb" style="display:grid;place-items:center"><${Icon} name=${r.type === 'service' ? 'wrench' : 'package'} size="sm" cls="muted" /></div>`) },
+          { key: 'name', label: t('product.name'), mobile: 'title', render: (r) => html`<div class="cell-name" dir="auto">${r.name}${!r.active ? html` <${Pill}>${t('common.inactive')}</${Pill}>` : null}</div>
             <div class="sub">${[r.code, r.brand_name, r.category_name, r.name2].filter(Boolean).join(' · ')}</div>` },
-          { key: 'stock', label: t('product.stock'), align: 'r', render: (r) => html`<${StockPill} p=${r} />${r.track_stock && r.stock_state !== 'ok' && r.stock_state !== 'none' ? html`<div class="sub">${t('product.min')}: ${fqty(r.low_level)}</div>` : null}` },
-          { key: 'price', label: t('print.col.price'), align: 'r', render: (r) => (r.price != null && Number(r.price) !== 0 ? html`<${Money} value=${r.price} cur=${r.currency} strong />`
+          { key: 'stock', label: t('product.stock'), align: 'r', mobile: 'subright', render: (r) => html`<${StockPill} p=${r} />${r.track_stock && r.stock_state !== 'ok' && r.stock_state !== 'none' ? html`<div class="sub">${t('product.min')}: ${fqty(r.low_level)}</div>` : null}` },
+          { key: 'price', label: t('print.col.price'), align: 'r', mobile: 'right', render: (r) => (r.price != null && Number(r.price) !== 0 ? html`<${Money} value=${r.price} cur=${r.currency} strong />`
             : html`<span class="warn-text small" title=${t('product.no_price_hint')}><${Icon} name="triangle-alert" size="sm" /> ${t('product.no_price')}</span>`) },
           showCost && { key: 'cost', label: t('product.avg_cost'), align: 'r', render: (r) => (r.avg_cost_usd ? html`<span class="num small">${money(r.avg_cost_usd, 'USD')}</span>` : r.cost_price ? html`<span class="num small muted">${money(r.cost_price, r.currency)}</span>` : '') },
           { key: 'shelf', label: t('product.shelf'), render: (r) => html`<span class="small">${r.shelf || ''}</span>` },
@@ -260,7 +264,7 @@ export function ProductPage({ id, query = {} }) {
     ${tab === 'info' && html`<div class="split wide-side">
       <div class="stack">
         <${Panel} title=${t('product.general')} icon="package">
-          <div class="row top gap-16">
+          <div class="row top gap-16 photo-row">
             <div class="col gap-8" style="align-items:center">
               <div class="photo-box" onClick=${ro ? null : photo} title=${t('product.photo')}>
                 ${p.photo_url ? html`<img src=${p.photo_url} alt="" />` : html`<${Icon} name="camera" size="lg" cls="muted" />`}
@@ -273,6 +277,7 @@ export function ProductPage({ id, query = {} }) {
               <${Field} label=${t('product.code')}><${Input} value=${p.code} onValue=${(v) => set({ code: v })} disabled=${ro} /></${Field}>
               <${Field} label=${t('product.barcode')}>
                 <div class="row gap-4"><${Input} value=${p.barcode} onValue=${(v) => set({ barcode: v.trim() })} disabled=${ro} />
+                  ${!ro && html`<${ScanButton} onCode=${(c) => set({ barcode: String(c).trim() })} title=${t('scan.title_barcode')} />`}
                   ${!ro && html`<${IconBtn} icon="refresh-cw" title=${t('product.generate_barcode')} onClick=${() => set({ barcode: generateEan13() })} />`}</div>
               </${Field}>
               <${Field} label=${t('product.type')}><${Select} value=${p.type} onValue=${(v) => set({ type: v, track_stock: v === 'service' ? 0 : p.track_stock })} disabled=${ro} options=${[{ value: 'product', label: t('product.type.product') }, { value: 'service', label: t('product.type.service') }]} /></${Field}>

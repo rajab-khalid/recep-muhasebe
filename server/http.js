@@ -111,10 +111,19 @@ function serveStatic(rootDir, req, res, urlPath) {
   }
   const ext = path.extname(target).toLowerCase();
   const isIndex = target.endsWith('index.html');
-  const cache = isIndex || ext === '.js' || ext === '.css' || ext === '.json' ? 'no-cache' : 'public, max-age=604800';
-  const data = fs.readFileSync(target);
+  const cache = isIndex || ext === '.html' || ext === '.js' || ext === '.css' || ext === '.json' || ext === '.webmanifest' ? 'no-cache' : 'public, max-age=604800';
   const extra = ext === '.html' ? PAGE_HEADERS : {};
-  send(res, 200, data, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': cache, ...extra }, req);
+  // files that did not change are not sent again (the phone app checks each file on every start)
+  const st = fs.statSync(target);
+  const etag = `W/"${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}"`;
+  const seen = String(req.headers['if-none-match'] || '').split(',').map((s) => s.trim());
+  if (seen.includes(etag)) {
+    res.writeHead(304, { ETag: etag, 'Cache-Control': cache, ...extra });
+    res.end();
+    return undefined;
+  }
+  const data = fs.readFileSync(target);
+  return send(res, 200, data, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': cache, ETag: etag, ...extra }, req);
 }
 
 module.exports = { Router, parseCookies, readBody, send, serveStatic, MIME, CSP };
