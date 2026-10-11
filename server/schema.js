@@ -319,6 +319,20 @@ const MIGRATIONS = [
   `,
   // ---------------------------------------------------------------- v4: a product's own USD/IQD rate for converting its price (empty = the day's rate)
   `ALTER TABLE products ADD COLUMN price_rate REAL;`,
+  // ---------------------------------------------------------------- v5: phones that keep an offline copy, and the work they sent back
+  `
+  CREATE TABLE phone_devices (
+    id TEXT PRIMARY KEY, code TEXT NOT NULL, user_id TEXT, name TEXT, agent TEXT,
+    created_at TEXT, last_seen TEXT, last_snapshot_at TEXT, last_sync_at TEXT, revoked INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE UNIQUE INDEX phone_devices_code ON phone_devices(code);
+  CREATE TABLE phone_ops (
+    id TEXT PRIMARY KEY, device_id TEXT, user_id TEXT, seq INTEGER, ts TEXT, method TEXT, path TEXT,
+    status TEXT NOT NULL, error TEXT, op TEXT, label TEXT, source TEXT, result TEXT, created_at TEXT, applied_at TEXT
+  );
+  CREATE INDEX phone_ops_device ON phone_ops(device_id, status);
+  CREATE INDEX phone_ops_created ON phone_ops(created_at);
+  `,
 ];
 
 module.exports = { MIGRATIONS };

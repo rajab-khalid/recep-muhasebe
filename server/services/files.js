@@ -6,7 +6,7 @@ module.exports = (app) => {
   function saveBuffer(buf, { name, mime } = {}) {
     U.assert(buf && buf.length, 'empty_file', 'File is empty');
     U.assert(buf.length <= 12 * 1024 * 1024, 'file_too_large', 'File is larger than 12 MB');
-    const id = uuid();
+    const id = uuid('files');
     db.insert('files', { id, name: name || null, mime: mime || 'application/octet-stream', size: buf.length, data: buf, created_at: U.nowIso() });
     return id;
   }

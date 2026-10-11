@@ -328,7 +328,7 @@ module.exports = function registerRoutes(router, app) {
         }
         app.db.update('warehouses', id, { name, code: U.str(b.code, 20), address: U.str(b.address, 300), active: b.active === false ? 0 : 1 });
       } else {
-        id = app.uuid();
+        id = app.uuid('warehouses');
         app.db.insert('warehouses', { id, name, code: U.str(b.code, 20), address: U.str(b.address, 300), is_default: 0, active: 1, sort: (app.db.val('SELECT MAX(sort) FROM warehouses') || 0) + 1, created_at: U.nowIso() });
       }
       if (b.is_default) app.db.run('UPDATE warehouses SET is_default = CASE WHEN id = ? THEN 1 ELSE 0 END', [id]);
@@ -411,7 +411,7 @@ module.exports = function registerRoutes(router, app) {
       `The new rate ${rate} is very different from the current rate ${cur.rate}`, 409, { old: cur.rate, rate });
     app.db.tx(() => {
       app.db.run('UPDATE currencies SET rate = ?, updated_at = ? WHERE code = ?', [rate, U.nowIso(), code]);
-      app.db.insert('rate_history', { id: app.uuid(), ts: U.nowIso(), currency: code, rate, source: ctx.body.source || 'manual', user_id: ctx.user.id });
+      app.db.insert('rate_history', { id: app.uuid('rate_history'), ts: U.nowIso(), currency: code, rate, source: ctx.body.source || 'manual', user_id: ctx.user.id });
       app.audit(ctx, 'rate', 'currency', code, { k: 'rate', v: { rate, code } });
     });
     app.invalidateCurrencies();

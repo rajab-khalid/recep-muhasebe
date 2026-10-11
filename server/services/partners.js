@@ -10,7 +10,7 @@ module.exports = (app) => {
     const fx = m.rate ? { rate: m.rate, usd_iqd: m.usd_iqd || app.usdIqd() } : app.fx(m.currency, m.usd_iqd);
     const amount = app.money(m.amount, m.currency);
     const row = {
-      id: uuid(), seq: app.nextSeq(), date: m.date, partner_id: m.partner_id, currency: m.currency,
+      id: uuid('partner_moves'), seq: app.nextSeq(), date: m.date, partner_id: m.partner_id, currency: m.currency,
       amount, rate: fx.rate, usd_iqd: fx.usd_iqd, amount_usd: U.round(amount / fx.rate, 6),
       kind: m.kind, doc_id: m.doc_id || null, payment_id: m.payment_id || null, entry_id: m.entry_id || null,
       description: m.description || null, due_date: m.due_date || null, rev: m.rev || 1, voided: 0,
@@ -135,7 +135,7 @@ module.exports = (app) => {
         db.update('partners', id, fields);
         app.audit(ctx, 'update', 'partner', id, name);
       } else {
-        id = uuid();
+        id = uuid('partners');
         db.insert('partners', { id, no: nextNo(), ...fields, is_walkin: d.is_walkin ? 1 : 0, created_at: now });
         app.audit(ctx, 'create', 'partner', id, name);
         // opening balance(s): [{currency, amount, date}] amount + = they owe us — needs the balance permission
@@ -201,7 +201,7 @@ module.exports = (app) => {
     const d = U.isDate(date) ? date : U.today();
     return db.tx(() => {
       const desc = U.str(description, 300) || `${Math.abs(amt)} ${from_currency} → ${toAmount} ${to_currency}`;
-      const group = uuid();
+      const group = uuid('partner_moves.entry_id');
       addMove({ date: d, partner_id: partnerId, currency: from_currency, amount: -sign * Math.abs(amt), kind: 'convert', entry_id: group, description: desc, user_id: ctx.user && ctx.user.id });
       addMove({ date: d, partner_id: partnerId, currency: to_currency, amount: sign * toAmount, kind: 'convert', entry_id: group, description: desc, user_id: ctx.user && ctx.user.id });
       app.audit(ctx, 'currency_convert', 'partner', partnerId, desc);

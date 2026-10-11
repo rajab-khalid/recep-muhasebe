@@ -16,7 +16,7 @@ module.exports = (app) => {
     if (!n) return null;
     const r = db.get('SELECT id FROM vehicle_makes WHERE lower(name) = lower(?)', [n]);
     if (r) return r.id;
-    const id = uuid();
+    const id = uuid('vehicle_makes');
     db.insert('vehicle_makes', { id, name: n });
     return id;
   }
@@ -25,7 +25,7 @@ module.exports = (app) => {
     if (!n || !makeId) return null;
     const r = db.get('SELECT id FROM vehicle_models WHERE make_id = ? AND lower(name) = lower(?)', [makeId, n]);
     if (r) return r.id;
-    const id = uuid();
+    const id = uuid('vehicle_models');
     db.insert('vehicle_models', { id, make_id: makeId, name: n });
     return id;
   }
@@ -136,6 +136,7 @@ module.exports = (app) => {
   function save(d, ctx) {
     return db.tx(() => {
       const now = U.nowIso();
+      const newId = d.id ? null : uuid('vehicles'); // first, before a make or model made on the way (see products.save)
       let makeId = d.make_id || null;
       let modelId = d.model_id || null;
       if (!makeId && d.make_text) makeId = ensureMake(d.make_text);
@@ -157,7 +158,7 @@ module.exports = (app) => {
         app.audit(ctx, 'update', 'vehicle', d.id, plate);
         return d.id;
       }
-      const id = uuid();
+      const id = newId;
       db.insert('vehicles', { id, ...fields, created_at: now });
       app.audit(ctx, 'create', 'vehicle', id, plate);
       return id;

@@ -64,6 +64,11 @@ function createApp(opts = {}) {
 
   const app = { db, dataDir, dbFile, version: APP_VERSION, uuid, U, opts, listeners: {}, restored };
 
+  /* ----------------------------------------------------------- changes (phones ask this to know whether their offline copy is old) */
+  app.changes = { boot: uuid().slice(0, 8), n: 0 };
+  app.noteChange = () => { app.changes.n++; };
+  app.changeToken = () => `${app.changes.boot}.${app.changes.n}`;
+
   /* ----------------------------------------------------------- events */
   app.on = (evt, fn) => { (app.listeners[evt] = app.listeners[evt] || []).push(fn); };
   app.emit = (evt, payload) => { for (const fn of app.listeners[evt] || []) { try { fn(payload); } catch (e) { console.error(e); } } };
@@ -118,7 +123,7 @@ function createApp(opts = {}) {
       summary = Object.values(summary.v || {}).filter((x) => x !== null && x !== undefined && x !== '').join(' ');
     }
     db.insert('audit_log', {
-      id: uuid(), ts: U.nowIso(), user_id: user ? user.id : null, user_name: user ? user.full_name : (ctx && ctx.system) || null,
+      id: uuid('audit_log'), ts: U.nowIso(), user_id: user ? user.id : null, user_name: user ? user.full_name : (ctx && ctx.system) || null,
       action, entity: entity || null, entity_id: entityId || null, summary: summary ? String(summary).slice(0, 500) : null,
       data: data === undefined ? null : JSON.stringify(data), ip: ctx && ctx.ip ? ctx.ip : null, msg,
     });
@@ -164,27 +169,53 @@ function createApp(opts = {}) {
   };
 
   /* ----------------------------------------------------------- numbering */
+  /*
+   * A phone working on its offline copy numbers its documents in its own series (SF2026-T1-0001), so they
+   * never take a number the shop computer gives meanwhile and keep their number when the computer receives
+   * them. While the phone records offline work, `app.recordNos` collects the numbers given; while the shop
+   * computer replays it, `app.replayNos` hands the same numbers out again.
+   */
+  const series = opts.series ? String(opts.series) : null;
+  const seqKey = (type, year) => (series ? `${type}:${year}:${series}` : `${type}:${year}`);
+  const formatNo = (prefix, year, n, pad) => `${prefix}${year}-${series ? `${series}-` : ''}${String(n).padStart(pad, '0')}`;
+  const numberTaken = (type, no, table) => (table === 'docs'
+    ? db.get('SELECT 1 FROM docs WHERE type = ? AND no = ?', [type, no])
+    : db.get(`SELECT 1 FROM ${table} WHERE no = ?`, [no]));
+  app.recordNos = null;
+  app.replayNos = null;
   app.peekNo = (type, date) => {
     const n = app.getSetting('numbering');
     const prefix = (n.prefixes && n.prefixes[type]) || DEFAULT_PREFIXES[type] || type.toUpperCase();
     const year = String(date || U.today()).slice(0, 4);
-    const key = `${type}:${year}`;
-    const last = db.val('SELECT last_no FROM sequences WHERE key = ?', [key]) || 0;
-    return `${prefix}${year}-${String(last + 1).padStart(n.pad || 4, '0')}`;
+    const last = db.val('SELECT last_no FROM sequences WHERE key = ?', [seqKey(type, year)]) || 0;
+    return formatNo(prefix, year, last + 1, n.pad || 4);
   };
   app.nextNo = (type, date, table = 'docs') => {
+    if (app.replayNos) {
+      const i = app.replayNos.findIndex((x) => x && x.type === type);
+      if (i >= 0) {
+        const r = app.replayNos.splice(i, 1)[0];
+        const no = U.str(r.no, 40);
+        U.assert(no && !numberTaken(type, no, table), 'number_taken', `Number ${no} is already used`, 400, { no });
+        // the phone's series goes on after this number in the next copy the phone gets
+        if (typeof r.key === 'string' && /^[a-z_]+:\d{4}:[A-Z0-9]{1,6}$/.test(r.key) && Number(r.n) > 0) {
+          db.run('INSERT INTO sequences (key, last_no) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET last_no = MAX(last_no, excluded.last_no)', [r.key, Math.floor(Number(r.n))]);
+        }
+        return no;
+      }
+    }
     const n = app.getSetting('numbering');
     const prefix = (n.prefixes && n.prefixes[type]) || DEFAULT_PREFIXES[type] || type.toUpperCase();
     const year = String(date || U.today()).slice(0, 4);
-    const key = `${type}:${year}`;
+    const key = seqKey(type, year);
     for (let i = 0; i < 1000; i++) {
       db.run('INSERT INTO sequences (key, last_no) VALUES (?, 1) ON CONFLICT(key) DO UPDATE SET last_no = last_no + 1', [key]);
       const last = db.val('SELECT last_no FROM sequences WHERE key = ?', [key]);
-      const no = `${prefix}${year}-${String(last).padStart(n.pad || 4, '0')}`;
-      let exists;
-      if (table === 'docs') exists = db.get('SELECT 1 FROM docs WHERE type = ? AND no = ?', [type, no]);
-      else exists = db.get(`SELECT 1 FROM ${table} WHERE no = ?`, [no]);
-      if (!exists) return no;
+      const no = formatNo(prefix, year, last, n.pad || 4);
+      if (!numberTaken(type, no, table)) {
+        if (app.recordNos) app.recordNos.push({ type, no, key, n: last });
+        return no;
+      }
     }
     throw new U.AppError('numbering_failed', 'Could not allocate a document number');
   };

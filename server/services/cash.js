@@ -59,7 +59,7 @@ module.exports = (app) => {
         db.update('money_accounts', id, fields);
         app.audit(ctx, 'update', 'money_account', id, name, { before: { opening_balance: before.opening_balance }, after: { opening_balance: fields.opening_balance } });
       } else {
-        id = uuid();
+        id = uuid('money_accounts');
         db.insert('money_accounts', { id, ...fields, sort: fields.sort ?? ((db.val('SELECT MAX(sort) FROM money_accounts') || 0) + 1), is_default: 0, created_at: U.nowIso() });
         app.audit(ctx, 'create', 'money_account', id, name);
       }
@@ -97,7 +97,7 @@ module.exports = (app) => {
     const amount = app.money(m.amount, a.currency);
     if (Math.abs(amount) < 1e-9) return null;
     const row = {
-      id: uuid(), seq: app.nextSeq(), date: m.date, account_id: a.id, amount, currency: a.currency,
+      id: uuid('money_moves'), seq: app.nextSeq(), date: m.date, account_id: a.id, amount, currency: a.currency,
       rate: fx.rate, usd_iqd: fx.usd_iqd, amount_usd: U.round(amount / fx.rate, 6),
       kind: m.kind, method: m.method || null, doc_id: m.doc_id || null, payment_id: m.payment_id || null,
       entry_id: m.entry_id || null, transfer_id: m.transfer_id || null, count_id: m.count_id || null,
@@ -173,7 +173,7 @@ module.exports = (app) => {
       usdIqd = from.currency === 'USD' ? toAmount / fromAmount : fromAmount / toAmount;
     }
     return db.tx(() => {
-      const id = uuid();
+      const id = uuid('transfers');
       const no = app.nextNo('money_transfer', date, 'transfers');
       db.insert('transfers', {
         id, no, date, kind: exchange ? 'exchange' : 'transfer', from_account_id: from.id, to_account_id: to.id,
@@ -249,7 +249,7 @@ module.exports = (app) => {
     const counted = app.money(U.num(d.counted), a.currency);
     const diff = app.money(counted - sys, a.currency);
     return db.tx(() => {
-      const id = uuid();
+      const id = uuid('cash_counts');
       db.insert('cash_counts', {
         id, date, account_id: a.id, system_balance: sys, counted, diff, details: d.details ? JSON.stringify(d.details) : null,
         posted: 0, note: U.str(d.note, 500), created_by: ctx.user && ctx.user.id, created_at: U.nowIso(),

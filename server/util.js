@@ -8,15 +8,32 @@ function round(x, n = 2) {
   return v < 0 ? -r : r;
 }
 
+/*
+ * The program's clock: normally the machine's own. While a phone's offline work is recorded on the phone and
+ * replayed on the shop computer it is held at the moment the work was done, so both sides write the same
+ * dates and times (a sale made at 22:10 stays a sale of 22:10 when the computer receives it next morning).
+ */
+let fixedClock = null; // { ms, day }
+function now() { return fixedClock ? new Date(fixedClock.ms) : new Date(); }
+/** iso: the moment to hold the clock at (null releases it); day: that moment's local date on the phone */
+function setClock(iso, day) {
+  const ms = iso ? Date.parse(iso) : NaN;
+  fixedClock = Number.isFinite(ms) ? { ms, day: typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null } : null;
+}
+
 /** Local calendar date (YYYY-MM-DD) of the machine running the server. */
-function today(d = new Date()) {
+function today(d) {
+  if (!d) {
+    if (fixedClock && fixedClock.day) return fixedClock.day;
+    d = now();
+  }
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
 
-function nowIso() { return new Date().toISOString(); }
+function nowIso() { return now().toISOString(); }
 
 function addDays(dateStr, n) {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -119,7 +136,7 @@ function parseJson(s, def) {
 }
 
 module.exports = {
-  round, today, nowIso, addDays, addMonths, daysBetween, isDate,
+  round, today, nowIso, now, setClock, addDays, addMonths, daysBetween, isDate,
   normalize, searchBlob, searchTerms, normPlate,
   AppError, assert, num, str, pick, parseJson,
 };

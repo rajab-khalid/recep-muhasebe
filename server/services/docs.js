@@ -244,7 +244,8 @@ module.exports = (app) => {
   /** goods leaving a warehouse (sale, transfer, purchase return): enough stock unless the shop allows negative stock */
   function checkStock(doc, lines, ctx, data) {
     const pos = app.getSetting('pos');
-    if (pos.allow_negative_stock || (data.allow_negative && ctx.skipPerm)) return;
+    // work done on a phone without the shop computer already happened: the goods left, so it is not refused afterwards
+    if (pos.allow_negative_stock || ctx.replay || (data.allow_negative && ctx.skipPerm)) return;
     const need = {};
     for (const l of lines) if (l.product_id && l.kind === 'product' && l.qty > 0) need[l.product_id] = (need[l.product_id] || 0) + l.qty;
     const short = [];
@@ -507,7 +508,7 @@ module.exports = (app) => {
     return db.tx(() => {
       const now = U.nowIso();
       const userId = ctx.user ? ctx.user.id : null;
-      let id = existing ? existing.id : uuid();
+      let id = existing ? existing.id : uuid('docs');
       let no = existing ? existing.no : null;
       if (!existing) {
         if (data.no) {
@@ -591,7 +592,7 @@ module.exports = (app) => {
         };
         if (type === 'adjust') lineRow.unit_cost_usd = l.unit_cost_usd;
         if (l.id && oldLines.some((o) => o.id === l.id)) db.update('doc_lines', l.id, lineRow);
-        else { l.id = uuid(); db.insert('doc_lines', { id: l.id, ...lineRow }); }
+        else { l.id = uuid('doc_lines'); db.insert('doc_lines', { id: l.id, ...lineRow }); }
       }
 
       const doc = db.get('SELECT * FROM docs WHERE id = ?', [id]);
@@ -671,7 +672,7 @@ module.exports = (app) => {
           const apply = Math.min(open, retInOrig);
           if (apply > (orig.currency === 'IQD' ? 1 : 0.01)) {
             const creditAmt = app.money(app.convert(apply, orig.currency, currency, { usd_iqd: orig.usd_iqd }), currency);
-            db.insert('doc_credits', { id: uuid(), doc_id: orig.id, credit_doc_id: id, amount: apply, credit_amount: Math.min(creditAmt, totals.total), voided: 0, created_at: now });
+            db.insert('doc_credits', { id: uuid('doc_credits'), doc_id: orig.id, credit_doc_id: id, amount: apply, credit_amount: Math.min(creditAmt, totals.total), voided: 0, created_at: now });
             app.payments.refreshDoc(orig.id);
           }
         }
@@ -686,7 +687,7 @@ module.exports = (app) => {
         if (unpaid > tol) {
           U.assert(!partner || !partner.is_walkin, 'walkin_credit', 'A credit (unpaid) sale needs a named customer, not the walk-in customer');
           if (!ctx.skipPerm) U.assert(app.users.can(ctx.user, 'sales.credit'), 'forbidden_credit', 'You are not allowed to make credit sales', 403);
-          if (partner && partner.credit_limit && !data.confirm_credit_limit) {
+          if (partner && partner.credit_limit && !data.confirm_credit_limit && !ctx.replay) {
             const ccy = partner.credit_currency || currency;
             const bals = app.partners.balances(partner.id);
             const bal = app.money(Object.entries(bals).reduce((sum, [c, v]) => sum + app.convert(v, c, ccy), 0), ccy);

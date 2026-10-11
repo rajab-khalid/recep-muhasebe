@@ -7,7 +7,7 @@ module.exports = (app) => {
     const warehouseId = d.warehouse_id || app.stock.defaultWarehouseId();
     const date = U.isDate(d.date) ? d.date : U.today();
     return db.tx(() => {
-      const id = uuid();
+      const id = uuid('stock_counts');
       const no = app.nextNo('stock_count', date, 'stock_counts');
       db.insert('stock_counts', {
         id, no, date, warehouse_id: warehouseId, status: 'draft', scope: d.scope ? JSON.stringify(d.scope) : null,
@@ -24,7 +24,7 @@ module.exports = (app) => {
       if (!s.empty) {
         const prods = db.all(`SELECT p.id FROM products p WHERE ${where.join(' AND ')} ORDER BY p.name`, params);
         for (const p of prods) {
-          db.insert('stock_count_lines', { id: uuid(), count_id: id, product_id: p.id, expected: app.stock.qtyOf(p.id, warehouseId), counted: null });
+          db.insert('stock_count_lines', { id: uuid('stock_count_lines'), count_id: id, product_id: p.id, expected: app.stock.qtyOf(p.id, warehouseId), counted: null });
         }
       }
       app.audit(ctx, 'create', 'stock_count', id, no);
@@ -64,7 +64,7 @@ module.exports = (app) => {
         if (ex) db.update('stock_count_lines', ex.id, { counted, note: l.note !== undefined ? U.str(l.note, 200) : undefined });
         else {
           U.assert(db.get('SELECT 1 FROM products WHERE id = ?', [l.product_id]), 'product_not_found', 'Product not found');
-          db.insert('stock_count_lines', { id: uuid(), count_id: id, product_id: l.product_id, expected: app.stock.qtyOf(l.product_id, c.warehouse_id), counted, note: U.str(l.note, 200) });
+          db.insert('stock_count_lines', { id: uuid('stock_count_lines'), count_id: id, product_id: l.product_id, expected: app.stock.qtyOf(l.product_id, c.warehouse_id), counted, note: U.str(l.note, 200) });
         }
       }
     });

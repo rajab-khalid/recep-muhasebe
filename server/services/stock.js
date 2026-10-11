@@ -20,7 +20,7 @@ module.exports = (app) => {
 
   function addMove(m) {
     const row = {
-      id: uuid(), seq: app.nextSeq(), date: m.date, product_id: m.product_id, warehouse_id: m.warehouse_id,
+      id: uuid('stock_moves'), seq: app.nextSeq(), date: m.date, product_id: m.product_id, warehouse_id: m.warehouse_id,
       qty: U.round(m.qty, 4), unit_cost_usd: U.round(m.unit_cost_usd || 0, 6), cost_fixed: m.cost_fixed ? 1 : 0,
       kind: m.kind, doc_id: m.doc_id || null, line_id: m.line_id || null, rev: m.rev || 1, voided: 0,
       note: m.note || null, user_id: m.user_id || null, created_at: U.nowIso(),

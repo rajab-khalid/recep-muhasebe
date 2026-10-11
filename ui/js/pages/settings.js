@@ -19,12 +19,14 @@ import { PartnerPicker, PriceListSelect, WarehouseSelect, CurrencySelect } from 
 import { clearModelCache } from './products.js';
 import { dn } from '../core/names.js';
 import { labelHtml, labelCss } from './products.js';
+import { OfflineSettings, OfflineDevices, offlineSettingsVisible } from './offline.js';
 
 const SECTIONS = [
   ['company', 'store', 'settings.manage'], ['invoice', 'file-text', 'settings.manage'], ['pos', 'shopping-cart', 'settings.manage'],
   ['currencies', 'coins', 'settings.manage'], ['stock', 'boxes', 'settings.manage'], ['pricelists', 'tag', 'settings.manage'],
   ['catalog', 'layout-grid', 'settings.manage'], ['numbering', 'hash', 'settings.manage'], ['labels', 'scan-barcode', 'settings.manage'],
-  ['backup', 'database', 'backup.manage'], ['network', 'wifi', 'settings.manage'], ['phone', 'smartphone', 'settings.manage'], ['security', 'shield', 'settings.manage'],
+  ['backup', 'database', 'backup.manage'], ['network', 'wifi', 'settings.manage'], ['phone', 'smartphone', 'settings.manage'], ['offline', 'wifi-off', 'settings.manage'],
+  ['security', 'shield', 'settings.manage'],
   ['general', 'sliders-horizontal', 'settings.manage'], ['about', 'info', 'settings.manage'],
 ];
 // the phone app is switched on at the shop computer itself (the desktop program)
@@ -32,7 +34,9 @@ const hasPhoneSetup = () => !!(window.desktop && window.desktop.phoneStatus);
 
 export function Settings({ tab }) {
   useTitle(t('nav.settings'));
-  const allowed = SECTIONS.filter(([k, , p]) => can(p) && (k !== 'phone' || hasPhoneSetup()));
+  const me = useStore((s) => s.user);
+  // working without the shop computer is switched on in the phone app itself (only the owner keeps a copy)
+  const allowed = SECTIONS.filter(([k, , p]) => can(p) && (k !== 'phone' || hasPhoneSetup()) && (k !== 'offline' || offlineSettingsVisible(me)));
   const cur = allowed.some(([k]) => k === tab) ? tab : (allowed[0] || [])[0];
   return html`<div class="page settings-layout">
     <nav class="settings-nav">${allowed.map(([k, icon]) => html`<button type="button" class=${cur === k ? 'on' : ''} onClick=${() => navigate(`/settings/${k}`)}><${Icon} name=${icon} size="sm" />${t(`settings.${k}`)}</button>`)}</nav>
@@ -49,6 +53,7 @@ export function Settings({ tab }) {
       ${cur === 'backup' && html`<${BackupSettings} />`}
       ${cur === 'network' && html`<${NetworkSettings} />`}
       ${cur === 'phone' && html`<${PhoneSettings} />`}
+      ${cur === 'offline' && html`<${OfflineSettings} />`}
       ${cur === 'security' && html`<${SecuritySettings} />`}
       ${cur === 'general' && html`<${GeneralSettings} />`}
       ${cur === 'about' && html`<${AboutSettings} />`}
@@ -801,6 +806,7 @@ function PhoneSettings() {
       </ol>
       ${err && html`<${Notice} kind="err" cls="mt-12"><div style="white-space:pre-line">${err}</div></${Notice}>`}
     </${Panel}>
+    <${OfflineDevices} />
     <${Panel} title=${t('phone.safety')} icon="shield-check"><p class="small dim" style="margin:0;max-width:72ch">${t('phone.safety_text')}</p></${Panel}>
   </div>`;
 }

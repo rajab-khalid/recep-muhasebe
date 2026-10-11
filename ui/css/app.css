@@ -890,6 +890,8 @@ body:has(.editor-bar) .toasts { bottom: 78px; }
   .modal-body { padding: 14px 16px; overscroll-behavior: contain; }
   .modal-foot { padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); flex-wrap: wrap; }
   .modal-foot > .btn { flex: 1 1 0; min-width: 0; height: 48px; }
+  /* three or more buttons do not fit side by side on a phone: two per row */
+  .modal-foot:has(> .btn:nth-of-type(3)) > .btn { flex: 1 1 calc(50% - 4px); }
   .modal-foot .left { flex: 1 1 100%; margin: 0; }
   .drawer, .drawer.narrow { width: 100vw; padding-top: env(safe-area-inset-top); }
   .drawer .modal-foot { padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
@@ -1099,4 +1101,32 @@ html[dir="rtl"] .mline.kind-labor { box-shadow: inset -3px 0 0 var(--info); }
   .picker-list { max-height: none; border: 0; margin-inline: -16px; border-radius: 0; border-top: 1px solid var(--line); }
   .picker-cats { scrollbar-width: none; margin-inline: -16px; padding-inline: 16px; }
   .picker-cats::-webkit-scrollbar { display: none; }
+}
+
+/* ------------------------------------------------------------------ working from the phone's offline copy */
+.offline-bar { flex: none; display: flex; align-items: center; gap: 10px; padding: 7px 20px; font-size: 13px; line-height: 1.3; border-bottom: 1px solid var(--line); }
+.offline-bar.off { background: var(--brass-soft); color: #5C4413; border-bottom-color: #E4D2A8; }
+.offline-bar.off .icon { color: var(--brass-strong); }
+.offline-bar.warn { background: var(--out-soft); color: #8C2A1F; border-bottom-color: #F0C9C2; }
+.offline-bar .ob-text { flex: 1; min-width: 0; }
+.offline-bar .ob-sub { opacity: .85; }
+.offline-bar .ob-btn {
+  flex: none; display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-radius: var(--radius); border: 1px solid currentColor;
+  background: transparent; color: inherit; font-weight: 600; font-size: 12.5px; cursor: pointer; white-space: nowrap;
+}
+.offline-bar .ob-btn:disabled { opacity: .6; cursor: default; }
+.offline-bar a.ob-btn:hover { text-decoration: none; }
+.problem-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
+.problem { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.problem:last-child { border-bottom: 0; }
+.problem .pr-main { flex: 1; min-width: 0; }
+.problem .pr-what { font-weight: 600; overflow-wrap: anywhere; }
+.problem .pr-why { font-size: 13px; margin: 2px 0 3px; }
+.problem .pr-acts { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 50%; }
+.tips-list { margin: 0; padding-inline-start: 18px; display: flex; flex-direction: column; gap: 6px; max-width: 72ch; }
+@media (max-width: 760px) {
+  .offline-bar { padding: 6px max(12px, env(safe-area-inset-right)) 6px max(12px, env(safe-area-inset-left)); font-size: 12.5px; }
+  .offline-bar .ob-btn { height: 34px; }
+  .problem { flex-direction: column; }
+  .problem .pr-acts { max-width: none; justify-content: flex-start; }
 }

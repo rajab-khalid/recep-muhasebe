@@ -50,6 +50,9 @@ export function auditText(r) {
     case 'secret_reset': return t('audit.msg.secret_reset', v);
     case 'phone_on': return t('audit.msg.phone_on');
     case 'phone_off': return t('audit.msg.phone_off');
+    case 'phone_copy': return t('audit.msg.phone_copy', v);
+    case 'phone_copy_removed': return t('audit.msg.phone_copy_removed', v);
+    case 'phone_op_dismissed': return t('audit.msg.phone_op_dismissed', v);
     default: return r.summary || '';
   }
 }

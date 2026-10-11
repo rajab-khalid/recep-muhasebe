@@ -52,7 +52,11 @@
     busy = true;
     if (manual) status.textContent = d.trying;
     fetch('/api/ping', { cache: 'no-store' })
-      .then(function (r) { if (r.ok) location.reload(); else throw new Error('down'); })
+      .then(function (r) {
+        if (!r.ok) throw new Error('down');
+        // opened as its own page (no copy on the phone): back to the program; shown in its place: reload it
+        if (location.pathname === '/offline.html') location.replace('/'); else location.reload();
+      })
       .catch(function () { status.textContent = d.waiting; })
       .then(function () { busy = false; });
   }

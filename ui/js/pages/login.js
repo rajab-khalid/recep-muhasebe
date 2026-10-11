@@ -3,9 +3,10 @@ import { html, useState, useEffect, useRef } from '../core/h.js';
 import { t, LANGS, getLang, setLang } from '../core/i18n.js';
 import { api } from '../core/api.js';
 import { initials } from '../core/format.js';
-import { Btn, Icon, Input, Field, Check, Spinner } from '../core/ui.js';
+import { Btn, Icon, Input, Field, Check, Spinner, Notice } from '../core/ui.js';
 import { loadBoot } from '../core/session.js';
 import { useStore } from '../core/store.js';
+import { dateTime } from '../core/format.js';
 
 export function Login() {
   const [users, setUsers] = useState(null);
@@ -18,6 +19,7 @@ export function Login() {
   const [busy, setBusy] = useState(false);
   const [help, setHelp] = useState(false);
   const remote = useStore((s) => !!(s.setup && s.setup.remote)); // the phone app: a PIN or password is always needed
+  const off = useStore((s) => s.offline) || {}; // opened from the phone's offline copy
   // the PIN typed so far; kept in a ref too, so quick typing never loses a digit between two screen updates
   const pinRef = useRef('');
   const busyRef = useRef(false);
@@ -83,6 +85,7 @@ export function Login() {
             ${LANGS.map((l) => html`<option value=${l.code} selected=${l.code === getLang()}>${l.name}</option>`)}
           </select>
         </div>
+        ${off.mode === 'offline' && html`<${Notice} kind="warn" icon="wifi-off" cls="mb-16">${t('offline.login_notice')}${off.copy && off.copy.snapshotAt ? html`<div class="tiny mt-4">${t('offline.bar_copy', { time: dateTime(off.copy.snapshotAt) })}</div>` : null}</${Notice}>`}
         ${users === null ? html`<${Spinner} />` : byName ? html`
           <form class="col gap-12" onSubmit=${(e) => { e.preventDefault(); submit(); }}>
             <${Field} label=${t('login.username')}><${Input} value=${username} onValue=${setUsername} autoFocus autocomplete="username" /></${Field}>

@@ -27,6 +27,7 @@ import { Settings } from './pages/settings.js';
 import { Audit } from './pages/audit.js';
 import { dn } from './core/names.js';
 import { ScanButton, canScan } from './core/scanner.js';
+import { OfflineBar } from './pages/offline.js';
 
 export const NAV = [
   { group: 'nav.g.main', items: [{ path: '/', icon: 'gauge', label: 'nav.dashboard', perm: 'dashboard.view' }] },
@@ -118,6 +119,7 @@ function Shell() {
   useIdleLock();
   useNotifications();
   useBackKeys();
+  const epoch = useModeChanges(route);
   useHotkeys({
     'ctrl+k': () => openModal(GlobalSearch),
     f2: () => { if (can(['pos.use', 'sales.create'])) navigate('/pos'); else return false; },
@@ -129,12 +131,36 @@ function Shell() {
     ${mobileOpen && html`<div class="side-scrim" onClick=${() => setMobileOpen(false)}></div>`}
     <div class="main">
       ${phone ? html`<${PhoneTopbar} route=${route} onMenu=${() => setMobileOpen(true)} />` : html`<${Topbar} onMenu=${() => setMobileOpen(!mobileOpen)} />`}
+      <${OfflineBar} />
       <main class=${`content ${isPos ? 'flush' : ''}`} id="content">
-        <${Routes} route=${route} />
+        <${Routes} key=${epoch} route=${route} />
       </main>
       ${tabs && html`<${TabBar} route=${route} menuOpen=${mobileOpen} onMenu=${() => setMobileOpen(!mobileOpen)} />`}
     </div>
   </div>`;
+}
+
+/*
+ * The phone switched between the shop computer and its offline copy: say so, load the start-up data again
+ * from the new source, and show the current screen again from it (not while a sale or a form is being typed:
+ * that screen keeps what was typed and the next screen reads from the new source).
+ */
+function useModeChanges(route) {
+  const [epoch, setEpoch] = useState(0);
+  const typing = ownBottomBar(route) || route.parts[0] === 'settings';
+  const typingRef = useRef(typing);
+  typingRef.current = typing;
+  useEffect(() => {
+    const on = async (e) => {
+      const online = e.detail && e.detail.mode === 'online';
+      toast(online ? t('offline.back_online') : t('offline.now_offline'), online ? 'ok' : 'warn', 5000);
+      await refreshBoot();
+      if (!typingRef.current) setEpoch((n) => n + 1);
+    };
+    window.addEventListener('rm-offline', on);
+    return () => window.removeEventListener('rm-offline', on);
+  }, []);
+  return epoch;
 }
 
 /* ------------------------------------------------------------------ phone: top bar and bottom menu */

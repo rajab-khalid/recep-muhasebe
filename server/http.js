@@ -8,6 +8,7 @@ const MIME = {
   '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.ico': 'image/x-icon',
   '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json',
+  '.wasm': 'application/wasm',
 };
 
 /** tiny router: add(method, '/api/products/:id', handler) */
@@ -16,7 +17,7 @@ class Router {
   add(method, pattern, handler, opts = {}) {
     const keys = [];
     const re = new RegExp('^' + pattern.replace(/\//g, '\\/').replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^\\/]+)'; }) + '\\/?$');
-    this.routes.push({ method, re, keys, handler, opts });
+    this.routes.push({ method, pattern, re, keys, handler, opts });
   }
   get(p, h, o) { this.add('GET', p, h, o); }
   post(p, h, o) { this.add('POST', p, h, o); }
@@ -76,7 +77,7 @@ function send(res, status, body, headers = {}, req) {
   const h = { 'Content-Type': type || 'text/plain; charset=utf-8', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store', ...headers };
   const accept = req && req.headers['accept-encoding'] || '';
   if (typeof data === 'string') data = Buffer.from(data);
-  if (data.length > 2048 && /\bgzip\b/.test(accept) && /json|text|javascript|css|svg/.test(h['Content-Type'])) {
+  if (data.length > 2048 && /\bgzip\b/.test(accept) && /json|text|javascript|css|svg|wasm/.test(h['Content-Type'])) {
     data = zlib.gzipSync(data);
     h['Content-Encoding'] = 'gzip';
   }
@@ -88,9 +89,11 @@ function send(res, status, body, headers = {}, req) {
 /*
  * Pages may only run the program's own script files (no inline or injected scripts), talk only to this
  * server and cannot be framed by other sites. Styles may be inline: printouts and the screens use them.
+ * 'wasm-unsafe-eval' lets the phone app start its own database (SQLite as WebAssembly, from the program's
+ * files) for working without the shop computer; it does not allow running text as script.
  */
 const CSP = [
-  "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob:",
+  "default-src 'self'", "script-src 'self' 'wasm-unsafe-eval'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob:",
   "font-src 'self' data:", "connect-src 'self'", "object-src 'none'", "base-uri 'self'", "form-action 'self'",
   "frame-ancestors 'self'",
 ].join('; ');

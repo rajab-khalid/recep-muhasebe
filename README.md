@@ -1,6 +1,6 @@
 # Recep Muhasebe 3
 
-Şêrwan Car Detailing için muhasebe, stok, hızlı satış, servis ve kasa programı. Windows'ta çalışır; aynı ağdaki diğer bilgisayarlar tarayıcıdan bağlanabilir. Telefon uygulaması (Android ve iPhone) dükkânda ve dışarıda aynı programa bağlanır (Adım 9).
+Şêrwan Car Detailing için muhasebe, stok, hızlı satış, servis ve kasa programı. Windows'ta çalışır; aynı ağdaki diğer bilgisayarlar tarayıcıdan bağlanabilir. Telefon uygulaması (Android ve iPhone) dükkânda ve dışarıda aynı programa bağlanır (Adım 9). Bilgisayar kapalıyken de telefondaki kopyayla çalışılabilir (Adım 10).
 
 Bu rehber programı GitHub'a yüklemek, kurulum dosyasını almak ve eski kayıtları taşımak için adım adım yazıldı. Toplam süre yaklaşık 30 dakika.
 
@@ -15,10 +15,9 @@ Bu rehber programı GitHub'a yüklemek, kurulum dosyasını almak ve eski kayıt
 - Her gün otomatik yedek, güncellemeden önce de yedek.
 - **Ağ modu:** dükkândaki diğer bilgisayarlar tarayıcıdan bağlanır.
 - **Telefon uygulaması (3.1):** aynı program telefonda; alt menü, kartlı listeler, telefona göre hızlı satış ve fatura ekranları, kamerayla barkod okuma. Dışarıdan da çalışır (Tailscale ile, ücretsiz).
+- **İnternetsiz çalışma (3.2):** telefon verilerin bir kopyasını tutar. Dükkândaki bilgisayar kapalıyken bütün kayıtlar görülür; satış, alış, tahsilat, ödeme ve gider yapılır. Bu işlemler bilgisayar açılınca kendiliğinden ona aktarılır.
 - 4 dil: Türkçe, Kurdî (Badînî), العربية, English.
 - Kullanıcılar ve yetkiler, PIN ile giriş, hatalı PIN denemelerinde bekletme.
-
-Bu sürüme dahil olmayan: internetsiz çalışma. Telefon uygulaması dükkândaki bilgisayara bağlanarak çalışır; bilgisayar açık ve program çalışıyor olmalı.
 
 ---
 
@@ -141,6 +140,29 @@ Telefon, dükkândaki bilgisayara ücretsiz **Tailscale** ağı üzerinden bağl
 
 ---
 
+## Adım 10 — İnternetsiz çalışma (bilgisayar kapalıyken telefondan)
+
+Telefon, dükkândaki bilgisayarın verilerinin bir kopyasını kendi içinde tutar. Bilgisayar kapalıyken (ör. gece evde) uygulama bu kopyayla açılır.
+
+**Açmak (bir kez, telefonda):**
+1. Telefonda uygulamayı açın ve yönetici (admin) kullanıcıyla girin. Telefon dükkândaki bilgisayara ulaşabiliyor olmalı.
+2. **Menü → Ayarlar → İnternetsiz çalışma** → **İnternetsiz çalışmayı aç**. Telefon ilk kopyayı alır ve kendi numara serisini öğrenir (ilk telefon `T1`).
+3. Uygulamanın ana ekrana eklenmiş olması gerekir (Adım 9). Tarayıcı sekmesinde kalan kopyayı telefon bir süre sonra silebilir.
+
+**Nasıl çalışır:**
+- Telefon bilgisayara ulaşabildiği sürece kopya kendiliğinden güncellenir (açılışta ve birkaç dakikada bir, yalnızca bir şey değiştiyse).
+- Bilgisayara ulaşılamayınca uygulama kopyayla açılır, PIN'inizi ister ve üstte **"İnternetsiz çalışıyor"** şeridi görünür. Bütün kayıtlar ve raporlar görülür. Satış, alış, iade, tahsilat, ödeme, gider, yeni müşteri ve ürün gibi işlemler yapılabilir.
+- Bu işlemler sırayla saklanır. Bilgisayar açılınca (veya şeritteki **Bağlanmayı dene** ile) bilgisayara aktarılır. Ardından telefon güncel kopyayı alır ve normal çalışmaya döner.
+- Telefonda internetsiz kesilen faturaların kendi numarası olur: `SF2026-T1-0001` gibi. Bilgisayara aktarılınca da aynı numarayla kalır, bilgisayardaki numaralarla çakışmaz.
+- Ayarlar, kullanıcılar, yedekleme, kasa ve depo tanımları gibi yönetim işleri için bilgisayara bağlı olmak gerekir.
+
+**Önemli:**
+- Telefondaki kopya, uygulamanın bilgisayara en son ulaştığı andaki kadar yenidir. Dükkândan çıkmadan önce, bilgisayar kapanmadan uygulamayı bir kez açmanız yeterli.
+- Bir kayıt hem bilgisayarda hem telefonda değiştirildiyse, telefondaki değişiklik bilgisayardakinin üzerine yazılmaz. Bilgisayarın kabul etmediği işlemler **Ayarlar → İnternetsiz çalışma → Aktarılamayan işlemler** listesinde görünür. Oradan **Yeniden dene**, **Telefondakini uygula** ya da **Yok say** seçilebilir. Aynı liste bilgisayarda **Ayarlar → Telefon uygulaması** sayfasında da görünür.
+- Bu özellik yalnızca yönetici kullanıcı için açılır, çünkü telefonda dükkânın bütün verileri durur. Telefon kaybolursa bilgisayarda **Ayarlar → Telefon uygulaması → Telefondaki kopyalar** bölümünden o telefonu **Kaldır**ın ve PIN'inizi değiştirin.
+
+---
+
 ## Sonraki güncellemeler
 
 Size yeni dosyalar verdiğimde:
@@ -169,6 +191,8 @@ Elle kontrol için: **Ayarlar → Hakkında → Güncellemeleri denetle**.
 - **Telefonda "Dükkândaki bilgisayara ulaşılamıyor":** bilgisayar açık ve program çalışıyor mu, telefonda Tailscale "Connected" mı bakın. Bilgisayar açılınca telefondaki sayfa kendiliğinden programa geçer.
 - **Telefonda kamera açılmıyor:** telefonun ayarlarından uygulamaya (Android'de Chrome'a, iPhone'da Safari'ye) kamera izni verin.
 - **Telefonda giriş yapılamıyor, "PIN'i yok" yazıyor:** bilgisayarda o kullanıcıya PIN verin (Kullanıcılar ekranı).
+- **Telefonda "İnternetsiz çalışıyor" şeridi kaybolmuyor:** bilgisayar açık mı, telefonda Tailscale bağlı mı bakın, sonra şeritteki **Bağlanmayı dene**'ye basın. Şeritte **Giriş yap** görünüyorsa bilgisayardaki oturum süresi dolmuştur: PIN'inizle girin, bekleyen işlemler ardından aktarılır.
+- **"Uygulama başka bir pencerede açık":** telefonda uygulamanın açık olan diğer penceresini (veya tarayıcı sekmesini) kapatın. Kopyayı aynı anda yalnızca bir pencere kullanabilir.
 
 ---
 
@@ -177,4 +201,5 @@ Elle kontrol için: **Ayarlar → Hakkında → Güncellemeleri denetle**.
 - `npm install`, sonra `npm start` (masaüstü), `npm run server` (yalnızca sunucu: http://127.0.0.1:8642) veya `npm test`.
 - `main.js` masaüstü kabuğu (Electron); `server/` veritabanı (node:sqlite) ve API; `ui/` ekranlar (Preact + htm, derleme adımı yok); `desktop/olddata.js` eski programın kayıtlarını salt okunur bir kopyadan okur.
 - `v` ile başlayan bir etiket gönderildiğinde `.github/workflows/build-release.yml` Windows kurulum dosyasını derleyip Releases'e yükler; depo adı ve sürüm numarası derleme sırasında otomatik ayarlanır.
-- Telefon uygulaması aynı arayüzdür (PWA): `ui/manifest.webmanifest`, `ui/sw.js` (yalnızca "ulaşılamıyor" sayfasını saklar, veri saklamaz), 760 px altı telefon görünümü (`usePhone`), `ui/js/core/scanner.js` (BarcodeDetector, yoksa `ui/vendor/zxing.min.js`), `ui/printview.html` (telefonda yazdırma). Bağlantı: `desktop/tailscale.js` → `tailscale serve --bg --yes http://127.0.0.1:PORT`; sunucu `*.ts.net` adını kabul eder ve 127.0.0.1'den gelen vekil isteklerini (X-Forwarded-For) telefonun adresiyle sayar, PIN'siz girişe izin vermez.
+- Telefon uygulaması aynı arayüzdür (PWA): `ui/manifest.webmanifest`, `ui/sw.js` (programın dosyalarını `/app-files.json` listesine göre saklar; bilgisayar cevap verirken dosyalar ondan gelir), 760 px altı telefon görünümü (`usePhone`), `ui/js/core/scanner.js` (BarcodeDetector, yoksa `ui/vendor/zxing.min.js`), `ui/printview.html` (telefonda yazdırma). Bağlantı: `desktop/tailscale.js` → `tailscale serve --bg --yes http://127.0.0.1:PORT`; sunucu `*.ts.net` adını kabul eder ve 127.0.0.1'den gelen vekil isteklerini (X-Forwarded-For) telefonun adresiyle sayar, PIN'siz girişe izin vermez.
+- İnternetsiz çalışma: telefon, sunucu kodunun kendisini (`server/` modülleri, `server/phone/bundle.js` ile tek bir tarayıcı modülüne paketlenir, `/phone/engine.js`) bir Web Worker'da (`ui/js/engine/worker.js`, `core.js`) SQLite WebAssembly (`ui/vendor/sqlite/`) üzerinde çalıştırır; veri OPFS'te (yoksa IndexedDB'de) durur. Kopya `GET /api/phone/snapshot` ile alınır (oturumlar, diğer kullanıcıların PIN'leri ve ürün fotoğrafları çıkarılır). Telefondaki yazma işlemleri (`server/phone/ops.js` listesindekiler) kendi kayıt kimlikleri, belge numaraları ve saatiyle sıraya alınır; `POST /api/phone/sync` bunları bilgisayarda aynı API işleyicileriyle, saat (`util.setClock`), kimlik (`db.setIdSource`) ve numara (`app.replayNos`) sabitlenerek yeniden oynatır. Her iş bir kez uygulanır (`phone_ops`); arada bilgisayarda değişmiş bir kaydı düzenleyen iş uygulanmaz, sorun olarak listelenir. Telefonun çevrimiçi yazmaları da `X-Op-Id` taşır, cevap kaybolursa ikinci kez uygulanmaz.

@@ -20,7 +20,7 @@ module.exports = (app) => {
       app.audit(ctx, 'update', 'finance_category', d.id, name);
       return d.id;
     }
-    const id = uuid();
+    const id = uuid('finance_categories');
     db.insert('finance_categories', { id, kind, code: null, name, in_pl: d.in_pl === false || d.in_pl === 0 ? 0 : 1, active: 1, sort: (db.val('SELECT MAX(sort) FROM finance_categories') || 0) + 1 });
     app.audit(ctx, 'create', 'finance_category', id, name);
     return id;
@@ -76,7 +76,7 @@ module.exports = (app) => {
         effects({ ...fields, id, no: before.no }, ctx, 2);
         app.audit(ctx, 'update', 'finance_entry', id, { k: 'no_amount', v: { no: before.no, amount, currency } }, { before });
       } else {
-        id = uuid();
+        id = uuid('finance_entries');
         const no = app.nextNo(kind, date, 'finance_entries');
         db.insert('finance_entries', { id, no, ...fields, status: 'posted', created_by: ctx.user && ctx.user.id, created_at: now });
         effects({ ...fields, id, no }, ctx, 1);
@@ -145,7 +145,7 @@ module.exports = (app) => {
       account_id: d.account_id || null, active: d.active === false ? 0 : 1,
     };
     if (d.id) { db.update('recurring_entries', d.id, fields); app.audit(ctx, 'update', 'recurring', d.id, fields.description); return d.id; }
-    const id = uuid();
+    const id = uuid('recurring_entries');
     db.insert('recurring_entries', { id, ...fields, created_at: U.nowIso() });
     app.audit(ctx, 'create', 'recurring', id, fields.description);
     return id;

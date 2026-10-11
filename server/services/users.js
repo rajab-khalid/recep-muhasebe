@@ -59,7 +59,7 @@ module.exports = (app) => {
         app.audit(ctx, 'update', 'role', r.id, name, { permissions: perms });
         return r.id;
       }
-      const id = uuid();
+      const id = uuid('roles');
       const sort = (db.val('SELECT MAX(sort) FROM roles') || 0) + 1;
       db.insert('roles', { id, code: null, name, permissions: JSON.stringify(perms), builtin: 0, sort });
       app.audit(ctx, 'create', 'role', id, name, { permissions: perms });
@@ -136,7 +136,7 @@ module.exports = (app) => {
         app.audit(ctx, 'update', 'user', u.id, full_name, { ...fields, password_hash: fields.password_hash ? '***' : undefined, pin_hash: fields.pin_hash ? '***' : undefined });
         return u.id;
       }
-      const id = uuid();
+      const id = uuid('users');
       if (fields.can_login) U.assert(fields.username || fields.pin_hash, 'login_needs_username', 'A username or PIN is required to sign in');
       db.insert('users', { id, ...fields, created_at: now });
       app.audit(ctx, 'create', 'user', id, full_name);

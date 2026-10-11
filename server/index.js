@@ -10,6 +10,9 @@ const path = require('node:path');
 const { createApp } = require('./app');
 const { Router, parseCookies, readBody, send, serveStatic } = require('./http');
 const registerRoutes = require('./api/routes');
+const registerPhoneRoutes = require('./phone/routes');
+const phoneOps = require('./phone/ops');
+const { engine: phoneEngine, appFiles } = require('./phone/bundle');
 
 const COOKIE = 'rm_sid';
 
@@ -61,6 +64,8 @@ function startServer(opts = {}) {
   const uiDir = opts.uiDir || path.join(__dirname, '..', 'ui');
   const router = new Router();
   registerRoutes(router, app);
+  const phone = registerPhoneRoutes(router, app);
+  try { phone.prune(); } catch (e) { console.error('[phone] prune failed', e); }
   const net = app.getSetting('network');
   const port = Number(opts.port || net.port || 8642);
   const host = opts.host || (net.lan_enabled ? '0.0.0.0' : '127.0.0.1');
@@ -70,6 +75,17 @@ function startServer(opts = {}) {
     if (!hostAllowed(req.headers.host)) return send(res, 421, { error: { code: 'bad_host', message: 'Open the program by its IP address' } }, {}, req);
     const url = new URL(req.url, 'http://localhost');
     const pathname = url.pathname;
+    // the phone app's offline engine (the program's own server code, packed for the phone) and its file list
+    if (pathname === '/phone/engine.js' || pathname === '/app-files.json') {
+      const isEngine = pathname === '/phone/engine.js';
+      const tag = `"${isEngine ? phoneEngine().hash : appFiles(uiDir).hash}"`;
+      if (String(req.headers['if-none-match'] || '').split(',').map((x) => x.trim()).includes(tag)) {
+        res.writeHead(304, { ETag: tag, 'Cache-Control': 'no-cache' });
+        return res.end();
+      }
+      const body = isEngine ? phoneEngine().code : JSON.stringify(appFiles(uiDir));
+      return send(res, 200, body, { 'Content-Type': isEngine ? 'text/javascript; charset=utf-8' : 'application/json; charset=utf-8', 'Cache-Control': 'no-cache', ETag: tag }, req);
+    }
     if (!pathname.startsWith('/api/')) return serveStatic(uiDir, req, res, pathname);
 
     const client = clientOf(req);
@@ -114,9 +130,28 @@ function startServer(opts = {}) {
       requestRestart: () => { if (opts.onRestartRequested) setTimeout(() => opts.onRestartRequested(), 300); },
     };
     try {
-      let result = match.route.handler(ctx);
-      if (result && typeof result.then === 'function') result = await result;
+      /*
+       * A write from the phone app carries its own id. If its answer was lost on the way, the phone sends it
+       * again with the same id (or does it on its offline copy and sends that later): it is then answered from
+       * the record of the first time and not applied twice.
+       */
+      const opId = req.method !== 'GET' && user && !/^\/api\/(auth|phone|setup)\//.test(pathname) ? String(req.headers['x-op-id'] || '') : '';
+      let result;
+      let duplicate = false;
+      if (opId && phone.ID_RE.test(opId)) {
+        let w = phone.onlineWrite(opId, String(req.headers['x-device-id'] || ''), ctx, () => match.route.handler(ctx), { atomic: !!phoneOps.writeRule(req.method, match.route.pattern) });
+        if (w && typeof w.then === 'function') w = await w;
+        result = w.result;
+        duplicate = w.duplicate;
+      } else {
+        result = match.route.handler(ctx);
+        if (result && typeof result.then === 'function') result = await result;
+      }
+      // the data changed: phones keeping an offline copy will fetch a new one
+      // (a changed PIN counts too: the phone's copy must not keep accepting the old one)
+      if (req.method !== 'GET' && !duplicate && !/^\/api\/(auth\/(login|logout|verify)|phone\/|notifications\/)/.test(pathname)) app.noteChange();
       const headers = {};
+      if (duplicate) headers['X-Op-Duplicate'] = '1'; // the answer kept from the first time this write was sent
       if (setCookies.length) headers['Set-Cookie'] = setCookies;
       if (result && result.__raw) {
         headers['Content-Type'] = result.type || 'application/octet-stream';

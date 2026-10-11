@@ -74,7 +74,7 @@ module.exports = (app) => {
     }
 
     return db.tx(() => {
-      const id = uuid();
+      const id = uuid('payments');
       const no = app.nextNo(d.direction === 'in' ? 'payment_in' : 'payment_out', date, 'payments');
       const userId = ctx.user && ctx.user.id;
       const desc = U.str(d.description, 300);
@@ -120,7 +120,7 @@ module.exports = (app) => {
         user_id: userId, usd_iqd: usdIqd,
       });
       for (const r of allocRows) {
-        db.insert('payment_allocations', { id: uuid(), payment_id: id, doc_id: r.doc.id, amount: r.amt, voided: 0, created_at: U.nowIso() });
+        db.insert('payment_allocations', { id: uuid('payment_allocations'), payment_id: id, doc_id: r.doc.id, amount: r.amt, voided: 0, created_at: U.nowIso() });
         refreshDoc(r.doc.id);
       }
       if (!d.silent) app.audit(ctx, 'create', 'payment', id, { k: 'payment', v: { no, direction: d.direction, amount, currency: acc.currency, partner: partner.name } });
@@ -157,7 +157,7 @@ module.exports = (app) => {
         const amt = Math.min(app.money(U.num(a.amount), doc.currency), remainingOf(doc));
         if (amt <= 0) continue;
         total += amt;
-        db.insert('payment_allocations', { id: uuid(), payment_id: paymentId, doc_id: doc.id, amount: amt, voided: 0, created_at: U.nowIso() });
+        db.insert('payment_allocations', { id: uuid('payment_allocations'), payment_id: paymentId, doc_id: doc.id, amount: amt, voided: 0, created_at: U.nowIso() });
         old.push(doc.id);
       }
       U.assert(total <= p.applied_amount + 0.01, 'over_allocated', 'Allocated amount is more than the payment');

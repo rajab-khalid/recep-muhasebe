@@ -139,6 +139,32 @@ class DB {
   }
 }
 
-function uuid() { return crypto.randomUUID(); }
+/*
+ * New record ids; `table` names what the id is for. A phone's offline work is replayed on the shop computer
+ * with the ids the phone gave it, table by table, so later work that points at those records (a payment for
+ * a sale made offline, a return of one of its lines) still finds them, even when the computer makes a
+ * different number of other records on the way (an existing vehicle, an extra payment allocation...).
+ */
+let idSource = null;
+function uuid(table) {
+  const v = idSource && idSource(table || '');
+  return v || crypto.randomUUID();
+}
+/** fn(table) returns the next id to use (or nothing for a fresh one); null goes back to fresh ids */
+function setIdSource(fn) { idSource = typeof fn === 'function' ? fn : null; }
 
-module.exports = { DB, uuid };
+/**
+ * Ids worked out from a seed: the same seed gives the same ids on the phone and on the shop computer (used for
+ * a write whose answer was lost: the phone does it again on its copy, with the same record ids).
+ */
+function seededIds(seed) {
+  const counts = {};
+  return (table) => {
+    const t = table || '';
+    const n = (counts[t] = (counts[t] || 0) + 1);
+    const h = crypto.createHash('sha256').update(`${seed}|${t}|${n}`).digest('hex');
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${((parseInt(h[16], 16) & 3) | 8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`;
+  };
+}
+
+module.exports = { DB, uuid, setIdSource, seededIds };

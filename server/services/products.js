@@ -31,7 +31,7 @@ module.exports = (app) => {
     if (!n) return null;
     const r = db.get('SELECT id FROM brands WHERE lower(name) = lower(?)', [n]);
     if (r) return r.id;
-    const id = uuid();
+    const id = uuid('brands');
     db.insert('brands', { id, name: n, active: 1 });
     return id;
   }
@@ -41,7 +41,7 @@ module.exports = (app) => {
     if (!n) return null;
     const r = db.get('SELECT id FROM categories WHERE lower(name) = lower(?)', [n]);
     if (r) return r.id;
-    const id = uuid();
+    const id = uuid('categories');
     db.insert('categories', { id, name: n, sort: (db.val('SELECT MAX(sort) FROM categories') || 0) + 1, active: 1 });
     return id;
   }
@@ -216,6 +216,9 @@ module.exports = (app) => {
     const canPrices = opts.skipPerm || app.users.can(ctx.user, 'products.prices');
     return db.tx(() => {
       const now = U.nowIso();
+      // the new product's id comes first, before any category or brand made on the way (a phone's offline work
+      // replayed on the shop computer then keeps the same id even if that category already exists there)
+      const newId = data.id ? null : uuid('products');
       const barcode = U.str(data.barcode, 60);
       if (barcode) {
         const dup = db.get('SELECT id, name FROM products WHERE barcode = ? AND id <> ? AND active = 1', [barcode, data.id || '']);
@@ -252,7 +255,7 @@ module.exports = (app) => {
         if (!canPrices && fields.currency !== before.currency) fields.currency = before.currency;
         db.update('products', id, fields);
       } else {
-        id = uuid();
+        id = newId;
         fields.cost_price = canPrices ? U.num(data.cost_price) : 0;
         fields.price_rate = canPrices && priceRate !== undefined ? priceRate : null;
         db.insert('products', { id, no: nextProductNo(), ...fields, avg_cost_usd: 0, created_at: now });
@@ -284,7 +287,7 @@ module.exports = (app) => {
         for (const c of data.codes) {
           const code = U.str(c.code, 80);
           if (!code) continue;
-          db.insert('product_codes', { id: uuid(), product_id: id, code, kind: ['oem', 'alt', 'supplier', 'barcode'].includes(c.kind) ? c.kind : 'alt', note: U.str(c.note, 200) });
+          db.insert('product_codes', { id: uuid('product_codes'), product_id: id, code, kind: ['oem', 'alt', 'supplier', 'barcode'].includes(c.kind) ? c.kind : 'alt', note: U.str(c.note, 200) });
         }
       }
       if (Array.isArray(data.fitments)) {
@@ -297,7 +300,7 @@ module.exports = (app) => {
           if (modelId && !makeId) makeId = db.val('SELECT make_id FROM vehicle_models WHERE id = ?', [modelId]);
           if (!makeId && !modelId) continue;
           db.insert('product_fitments', {
-            id: uuid(), product_id: id, make_id: makeId, model_id: modelId,
+            id: uuid('product_fitments'), product_id: id, make_id: makeId, model_id: modelId,
             year_from: f.year_from ? Math.round(U.num(f.year_from)) : null, year_to: f.year_to ? Math.round(U.num(f.year_to)) : null,
             engine: U.str(f.engine, 60), note: U.str(f.note, 200),
           });
@@ -528,7 +531,7 @@ module.exports = (app) => {
       let id = d.id;
       if (id) db.update('price_lists', id, { name, active: d.active === false ? 0 : 1, sort: d.sort != null ? U.num(d.sort) : undefined });
       else {
-        id = uuid();
+        id = uuid('price_lists');
         db.insert('price_lists', { id, code: null, name, sort: (db.val('SELECT MAX(sort) FROM price_lists') || 0) + 1, active: 1, is_default: 0 });
       }
       if (d.is_default) {

@@ -10,7 +10,7 @@
   "scripts": {
     "start": "electron .",
     "server": "node server/index.js --data ./data",
-    "test": "node --test test/core.test.js test/import.test.js test/olddata.test.js test/rules.test.js test/server.test.js",
+    "test": "node --test test/core.test.js test/import.test.js test/olddata.test.js test/rules.test.js test/server.test.js test/offline.test.js",
     "dist": "electron-builder --win --x64"
   },
   "build": {
