@@ -55,8 +55,15 @@ module.exports = function registerRoutes(router, app) {
   router.post('/api/setup/complete', (ctx) => {
     setupGuard();
     const b = ctx.body || {};
+    // set up from a phone or another device: the admin must be able to sign in from there afterwards, with
+    // the secret that is actually kept (a password, or a PIN of digits only)
+    const adm = b.admin || {};
+    const secret = adm.password ? String(adm.password) : (/^\d{4,8}$/.test(String(adm.pin || '')) ? String(adm.pin) : '');
+    if (app.users.fromNetwork(ctx.ip, ctx.offline)) {
+      U.assert(secret.length >= app.users.REMOTE_MIN_SECRET, 'remote_pin_short', 'From a phone or another device the PIN or password needs at least 6 digits', 400, { min: app.users.REMOTE_MIN_SECRET });
+    }
     const r = app.setup.complete(b);
-    const login = app.users.login({ user_id: r.user_id, password: (b.admin && (b.admin.password || b.admin.pin)) || undefined, remember: true, ip: ctx.ip, agent: ctx.req.headers['user-agent'] });
+    const login = app.users.login({ user_id: r.user_id, password: secret || undefined, remember: true, ip: ctx.ip, agent: ctx.req.headers['user-agent'], offline: !!ctx.offline });
     ctx.setSession(login.token, true, login.days);
     return { user: login.user };
   }, { public: true });
@@ -67,7 +74,10 @@ module.exports = function registerRoutes(router, app) {
   }, { public: true });
   router.post('/api/auth/login', (ctx) => {
     const b = ctx.body || {};
-    const r = app.users.login({ user_id: b.user_id, username: b.username, password: b.password, pin: b.pin, remember: b.remember !== false, ip: ctx.ip, agent: ctx.req.headers['user-agent'] });
+    const r = app.users.login({
+      user_id: b.user_id, username: b.username, password: b.password, pin: b.pin, remember: b.remember !== false, ip: ctx.ip,
+      agent: ctx.req.headers['user-agent'], offline: !!ctx.offline, device_id: ctx.req.headers['x-device-id'],
+    });
     ctx.setSession(r.token, r.remember, r.days);
     return { user: r.user };
   }, { public: true, smallBody: true });
@@ -79,7 +89,33 @@ module.exports = function registerRoutes(router, app) {
     U.assert(ok, 'wrong_credentials', 'Wrong password or PIN', 401);
     return { ok: true };
   }, { smallBody: true });
-  router.post('/api/auth/change-secret', (ctx) => { need(ctx); app.users.changeOwnSecret(ctx.user.id, ctx.body, ctx.ip); return { ok: true }; }, { smallBody: true });
+  router.post('/api/auth/change-secret', (ctx) => {
+    need(ctx);
+    app.users.changeOwnSecret(ctx.user.id, ctx.body, ctx.ip, { token: ctx.token, offline: !!ctx.offline });
+    return { ok: true };
+  }, { smallBody: true });
+
+  /*
+   * Who is signed in where. An admin can sign out one device (a lost phone) or everyone else at once; the
+   * screen asking is never signed out by it. Sessions are named by a public id, never by their token.
+   */
+  router.get('/api/auth/sessions', (ctx) => { need(ctx, 'users.manage'); return app.users.sessionsList(ctx.token); });
+  router.post('/api/auth/sessions/:id/end', (ctx) => {
+    need(ctx, 'users.manage');
+    const s = app.users.sessionById(ctx.params.id);
+    U.assert(s, 'not_found', 'This session has already ended', 404);
+    const n = app.users.endSessions({ id: s.id, except: ctx.token });
+    U.assert(n > 0, 'session_current', 'This is the screen you are using: sign out from its menu instead', 400);
+    // the screen names the device in the reader's language from these (phone series, browser, address)
+    app.audit(ctx, 'sign_out', 'user', s.user_id, { k: 'session_ended', v: { name: s.full_name, code: s.device_code || '', agent: String(s.agent || '').slice(0, 200), ip: s.ip || '' } });
+    return { ok: true, n };
+  }, { smallBody: true });
+  router.post('/api/auth/sessions/end-others', (ctx) => {
+    need(ctx, 'users.manage');
+    const n = app.users.endSessions({ all: true, except: ctx.token });
+    app.audit(ctx, 'sign_out', 'system', null, { k: 'sessions_ended', v: { n } });
+    return { ok: true, n };
+  }, { smallBody: true });
 
   /* ================================================================ bootstrap */
   function lanAddresses() {
@@ -478,7 +514,6 @@ module.exports = function registerRoutes(router, app) {
       network: app.getSetting('network'), node: process.versions.node, platform: process.platform,
       counts: app.db.get(`SELECT (SELECT COUNT(*) FROM products) AS products, (SELECT COUNT(*) FROM partners) AS partners,
         (SELECT COUNT(*) FROM docs) AS docs, (SELECT COUNT(*) FROM payments) AS payments, (SELECT COUNT(*) FROM audit_log) AS audit`),
-      sessions: app.db.all(`SELECT s.created_at, s.last_seen, s.ip, s.agent, u.full_name FROM sessions s JOIN users u ON u.id = s.user_id ORDER BY s.last_seen DESC LIMIT 30`),
     };
   });
 };

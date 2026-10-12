@@ -16,6 +16,7 @@ Bu rehber programı GitHub'a yüklemek, kurulum dosyasını almak ve eski kayıt
 - **Ağ modu:** dükkândaki diğer bilgisayarlar tarayıcıdan bağlanır.
 - **Telefon uygulaması (3.1):** aynı program telefonda; alt menü, kartlı listeler, telefona göre hızlı satış ve fatura ekranları, kamerayla barkod okuma. Dışarıdan da çalışır (Tailscale ile, ücretsiz).
 - **İnternetsiz çalışma (3.2):** telefon verilerin bir kopyasını tutar. Dükkândaki bilgisayar kapalıyken bütün kayıtlar görülür; satış, alış, tahsilat, ödeme ve gider yapılır. Bu işlemler bilgisayar açılınca kendiliğinden ona aktarılır.
+- **Giriş güvenliği (3.2.1):** telefondan giriş için en az 6 haneli PIN; PIN değişince diğer cihazlardaki oturumlar kapanır; kaybolan bir telefonun oturumu bilgisayardan kapatılır (**Ayarlar → Güvenlik → Açık oturumlar**); telefondan art arda yanlış PIN girilirse bilgisayarda uyarı çıkar.
 - 4 dil: Türkçe, Kurdî (Badînî), العربية, English.
 - Kullanıcılar ve yetkiler, PIN ile giriş, hatalı PIN denemelerinde bekletme.
 
@@ -107,12 +108,12 @@ Eski dosyalarınız hiç değiştirilmez; yeni program kendi veritabanını kull
 1. Ana bilgisayarda **Ayarlar → Ağ (diğer cihazlar)** → **Ağdaki diğer cihazların bağlanmasına izin ver** → program yeniden başlar.
 2. Windows Güvenlik Duvarı sorarsa **Erişime izin ver** deyin.
 3. Aynı sayfada bir adres ve QR kod görünür, ör. `http://192.168.1.20:8642`. Diğer bilgisayarda Chrome'a bu adresi yazın.
-4. Her kullanıcının PIN'i veya şifresi olmalı. Şifresiz giriş yalnızca ana bilgisayardan yapılabilir.
+4. Diğer cihazlardan girmek için her kullanıcının en az 6 haneli PIN'i veya şifresi olmalı. 4 haneli PIN ve şifresiz giriş yalnızca ana bilgisayarda çalışır.
 5. Ana bilgisayar açık olduğu sürece diğerleri çalışır; bütün veriler ana bilgisayarda durur.
 
 Bağlanamıyorsa: Windows'ta **Ayarlar → Ağ ve İnternet → Wi‑Fi** → bağlı olduğunuz ağ → **Özel ağ** seçili olmalı.
 
-Güvenlik: bir kullanıcı 5 kez yanlış PIN girerse 30 saniye bekletilir; tekrarlanırsa süre uzar (en çok 30 dakika). Yönetici **Kullanıcılar** sayfasında o kişiyi açıp **Kilidi aç** ile hemen açabilir.
+Güvenlik: bir kullanıcı 5 kez yanlış PIN girerse 30 saniye bekletilir; tekrarlanırsa süre uzar (en çok 30 dakika). Yönetici **Kullanıcılar** sayfasında o kişiyi açıp **Kilidi aç** ile hemen açabilir. Telefondan veya başka bir cihazdan art arda yanlış PIN girilirse yöneticinin ekranında uyarı çıkar (zil simgesinde de kalır).
 
 Telefonlar için Adım 9'daki telefon uygulamasını kullanın: kamera ve ana ekrana ekleme yalnızca o güvenli adresle çalışır.
 
@@ -124,7 +125,7 @@ Telefon, dükkândaki bilgisayara ücretsiz **Tailscale** ağı üzerinden bağl
 1. **Ayarlar → Telefon uygulaması** sayfasını açın. Sayfa her adımın durumunu gösterir.
 2. **Tailscale'i indir** ile Tailscale'i kurun. Saatin yanındaki Tailscale simgesinden **Log in** ile bir Google hesabıyla giriş yapın.
 3. **Telefon erişimini aç** düğmesine basın. Tailscale ilk seferde bir onay sayfası açabilir: o sayfada onaylayın (HTTPS / Serve). Onaydan sonra sayfada `https://…ts.net` ile biten adres ve bir QR kod görünür.
-4. Telefondan girecek her kullanıcının PIN'i olmalı. Sizin PIN'iniz yoksa aynı sayfadaki **Kendime PIN koy** düğmesini kullanın.
+4. Telefondan girecek her kullanıcının en az 6 haneli PIN'i (veya en az 6 karakterli şifresi) olmalı; 4 haneli PIN yalnızca dükkândaki bilgisayarda çalışır. Sizin PIN'iniz yoksa ya da kısaysa aynı sayfadaki **Kendime PIN koy** / **PIN'imi değiştir** düğmesini kullanın.
 
 **Telefonda:**
 1. Google Play'den (Android) veya App Store'dan (iPhone) **Tailscale**'i kurun. Bilgisayardaki **aynı hesapla** giriş yapın ve bağlantıyı açın.
@@ -136,7 +137,10 @@ Telefon, dükkândaki bilgisayara ücretsiz **Tailscale** ağı üzerinden bağl
 
 **Telefonda neler var:** bütün ekranlar (satış, fatura, ürün, stok, cari, kasa, rapor, ayar). Alt menüde Panel, Satış, Faturalar, Ürünler ve Menü bulunur. Hızlı satışta ve faturada kamera düğmesiyle barkod okutulur; hızlı satışta her okutulan ürün sepete eklenir. Stok sayımında da kamerayla sayım yapılır. Yazdır düğmesi belgeyi telefonun yazdırma penceresinde açar (yazıcı veya PDF olarak kaydet).
 
-**Güvenlik:** bir telefonu kaybederseniz login.tailscale.com sayfasından o cihazı silin ve Kullanıcılar ekranından o kullanıcının PIN'ini değiştirin. Telefondan PIN'siz giriş yapılamaz.
+**Güvenlik:** telefondan PIN'siz giriş yapılamaz; PIN en az 6 haneli olmalı. **Ayarlar → Güvenlik → Açık oturumlar** listesinde programa hangi bilgisayar ve telefonlardan girildiği görünür. Bir telefonu kaybederseniz:
+1. login.tailscale.com sayfasından o cihazı silin.
+2. **Ayarlar → Güvenlik → Açık oturumlar**'da o telefonun yanındaki **Çıkış yaptır**'a basın (internetsiz çalışan telefonu **Telefondaki kopyalar**'dan kaldırmak da çıkışını yaptırır).
+3. **Kullanıcılar** ekranından o kullanıcının PIN'ini değiştirin. PIN değişince o kullanıcının diğer cihazlardaki oturumları da kendiliğinden kapanır.
 
 ---
 
@@ -159,7 +163,8 @@ Telefon, dükkândaki bilgisayarın verilerinin bir kopyasını kendi içinde tu
 **Önemli:**
 - Telefondaki kopya, uygulamanın bilgisayara en son ulaştığı andaki kadar yenidir. Dükkândan çıkmadan önce, bilgisayar kapanmadan uygulamayı bir kez açmanız yeterli.
 - Bir kayıt hem bilgisayarda hem telefonda değiştirildiyse, telefondaki değişiklik bilgisayardakinin üzerine yazılmaz. Bilgisayarın kabul etmediği işlemler **Ayarlar → İnternetsiz çalışma → Aktarılamayan işlemler** listesinde görünür. Oradan **Yeniden dene**, **Telefondakini uygula** ya da **Yok say** seçilebilir. Aynı liste bilgisayarda **Ayarlar → Telefon uygulaması** sayfasında da görünür.
-- Bu özellik yalnızca yönetici kullanıcı için açılır, çünkü telefonda dükkânın bütün verileri durur. Telefon kaybolursa bilgisayarda **Ayarlar → Telefon uygulaması → Telefondaki kopyalar** bölümünden o telefonu **Kaldır**ın ve PIN'inizi değiştirin.
+- Bu özellik yalnızca yönetici kullanıcı için açılır, çünkü telefonda dükkânın bütün verileri durur. Telefonun ekran kilidi mutlaka açık olsun. Telefon kaybolursa bilgisayarda **Ayarlar → Telefon uygulaması → Telefondaki kopyalar** bölümünden o telefonu **Kaldır**ın (oturumu da kapanır) ve PIN'inizi değiştirin.
+- Telefondaki kopyayla (bilgisayar kapalıyken) girişte 4 haneli PIN de çalışır; 6 hane kuralı dükkândaki bilgisayara telefondan girerken geçerlidir.
 
 ---
 
@@ -190,7 +195,9 @@ Elle kontrol için: **Ayarlar → Hakkında → Güncellemeleri denetle**.
 - **Program açılmıyor:** bilgisayarı yeniden başlatın. Yine açılmazsa çıkan hata penceresinin fotoğrafını gönderin.
 - **Telefonda "Dükkândaki bilgisayara ulaşılamıyor":** bilgisayar açık ve program çalışıyor mu, telefonda Tailscale "Connected" mı bakın. Bilgisayar açılınca telefondaki sayfa kendiliğinden programa geçer.
 - **Telefonda kamera açılmıyor:** telefonun ayarlarından uygulamaya (Android'de Chrome'a, iPhone'da Safari'ye) kamera izni verin.
-- **Telefonda giriş yapılamıyor, "PIN'i yok" yazıyor:** bilgisayarda o kullanıcıya PIN verin (Kullanıcılar ekranı).
+- **Telefonda giriş yapılamıyor, "PIN'i yok" yazıyor:** bilgisayarda o kullanıcıya en az 6 haneli bir PIN verin (Kullanıcılar ekranı).
+- **Telefonda "PIN veya şifre en az 6 haneli olmalı" yazıyor:** PIN 4 veya 5 hanelidir. Dükkândaki bilgisayarda **Kullanıcılar** ekranından (ya da menüdeki **Şifre / PIN değiştir** ile) en az 6 haneli yeni bir PIN verin. Telefonda hâlâ açık bir oturum varsa PIN orada da menüden değiştirilebilir. **Kullanıcılar** listesinde PIN'i kısa olanlarda **PIN kısa** yazar (PIN'i 3.2.1'den önce konmuş olanlarda bu, PIN bir kez girildikten sonra görünür).
+- **Zilde "… kez yanlış PIN girildi" uyarısı var:** siz ya da çalışanınız değilseniz login.tailscale.com'da cihaz listesine bakın, tanımadığınız cihazı silin, **Ayarlar → Güvenlik → Açık oturumlar**'a bakın ve ilgili kullanıcının PIN'ini değiştirin.
 - **Telefonda "İnternetsiz çalışıyor" şeridi kaybolmuyor:** bilgisayar açık mı, telefonda Tailscale bağlı mı bakın, sonra şeritteki **Bağlanmayı dene**'ye basın. Şeritte **Giriş yap** görünüyorsa bilgisayardaki oturum süresi dolmuştur: PIN'inizle girin, bekleyen işlemler ardından aktarılır.
 - **"Uygulama başka bir pencerede açık":** telefonda uygulamanın açık olan diğer penceresini (veya tarayıcı sekmesini) kapatın. Kopyayı aynı anda yalnızca bir pencere kullanabilir.
 
@@ -203,3 +210,4 @@ Elle kontrol için: **Ayarlar → Hakkında → Güncellemeleri denetle**.
 - `v` ile başlayan bir etiket gönderildiğinde `.github/workflows/build-release.yml` Windows kurulum dosyasını derleyip Releases'e yükler; depo adı ve sürüm numarası derleme sırasında otomatik ayarlanır.
 - Telefon uygulaması aynı arayüzdür (PWA): `ui/manifest.webmanifest`, `ui/sw.js` (programın dosyalarını `/app-files.json` listesine göre saklar; bilgisayar cevap verirken dosyalar ondan gelir), 760 px altı telefon görünümü (`usePhone`), `ui/js/core/scanner.js` (BarcodeDetector, yoksa `ui/vendor/zxing.min.js`), `ui/printview.html` (telefonda yazdırma). Bağlantı: `desktop/tailscale.js` → `tailscale serve --bg --yes http://127.0.0.1:PORT`; sunucu `*.ts.net` adını kabul eder ve 127.0.0.1'den gelen vekil isteklerini (X-Forwarded-For) telefonun adresiyle sayar, PIN'siz girişe izin vermez.
 - İnternetsiz çalışma: telefon, sunucu kodunun kendisini (`server/` modülleri, `server/phone/bundle.js` ile tek bir tarayıcı modülüne paketlenir, `/phone/engine.js`) bir Web Worker'da (`ui/js/engine/worker.js`, `core.js`) SQLite WebAssembly (`ui/vendor/sqlite/`) üzerinde çalıştırır; veri OPFS'te (yoksa IndexedDB'de) durur. Kopya `GET /api/phone/snapshot` ile alınır (oturumlar, diğer kullanıcıların PIN'leri ve ürün fotoğrafları çıkarılır). Telefondaki yazma işlemleri (`server/phone/ops.js` listesindekiler) kendi kayıt kimlikleri, belge numaraları ve saatiyle sıraya alınır; `POST /api/phone/sync` bunları bilgisayarda aynı API işleyicileriyle, saat (`util.setClock`), kimlik (`db.setIdSource`) ve numara (`app.replayNos`) sabitlenerek yeniden oynatır. Her iş bir kez uygulanır (`phone_ops`); arada bilgisayarda değişmiş bir kaydı düzenleyen iş uygulanmaz, sorun olarak listelenir. Telefonun çevrimiçi yazmaları da `X-Op-Id` taşır, cevap kaybolursa ikinci kez uygulanmaz.
+- Giriş güvenliği (3.2.1, şema v6): bilgisayarın kendisi dışından (`users.fromNetwork`: 127.0.0.1 değil ve telefonun kendi kopyası değil) gelen girişte 6 karakterden kısa PIN/şifre hiç denenmez (`remote_pin_short`, yalnız adres sayacına yazılır). Oturumların açık kimliği (`sessions.id`, belirteç hiç dışarı çıkmaz) ve telefon bağı (`sessions.device_id`: girişte `X-Device-Id`, kayıtta ve `/api/phone/state`'te bağlanır) vardır; `GET /api/auth/sessions`, `POST /api/auth/sessions/:id/end`, `POST /api/auth/sessions/end-others`. PIN/şifre değişince kullanıcının diğer oturumları, telefon kaldırılınca o telefonun oturumları kapanır; kaldırılmış bir telefon oturumla gelirse (`/api/phone/state`, `/sync`, `X-Device-Id` taşıyan yazma) o oturum da kapanır. Oturumu kapanan telefon giriş ekranında `GET /api/phone/removed` ile kaldırıldığını öğrenir ve kopyasını yalnızca gönderilmemiş işi yoksa siler. `users.pin_len` PIN konunca yazılır, eski PIN'lerde ilk doğru girişte öğrenilir. Telefondan gelen yanlış PIN'ler (kullanıcı ya da adres bekletilince) `users.manage` yetkisi olanlara `login_fails` bildirimi olarak çıkar.

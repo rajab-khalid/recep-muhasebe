@@ -190,3 +190,13 @@ export function waPhone(phone) {
   if (p.length === 10 && p.startsWith('7')) p = '964' + p;
   return p;
 }
+
+/** "Recep Muhasebe · Windows", "Chrome · Android" from a browser's user-agent text */
+export function uaName(ua) {
+  const u = String(ua || '');
+  if (!u) return '—';
+  const app = /Electron|recep-muhasebe/i.test(u) ? 'Recep Muhasebe' : /Edg\//.test(u) ? 'Edge' : /OPR\//.test(u) ? 'Opera' : /Firefox\//.test(u) ? 'Firefox'
+    : /CriOS|Chrome\//.test(u) ? 'Chrome' : /Safari\//.test(u) ? 'Safari' : '';
+  const os = /Windows/.test(u) ? 'Windows' : /Android/.test(u) ? 'Android' : /iPhone/.test(u) ? 'iPhone' : /iPad/.test(u) ? 'iPad' : /Mac OS X/.test(u) ? 'macOS' : /Linux/.test(u) ? 'Linux' : '';
+  return [app, os].filter(Boolean).join(' · ') || u.slice(0, 40);
+}

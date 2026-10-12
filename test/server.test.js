@@ -85,9 +85,20 @@ test('phone app over Tailscale: no sign-in without a PIN, secure cookie, misses 
     assert.equal(here.status, 200, 'this computer itself still signs in without a PIN');
     assert.ok(!/Secure/.test(String(here.headers['set-cookie'])), 'plain http cookie on this computer');
 
-    // with a PIN, the phone signs in and gets a cookie that only travels over https
+    // a 4-digit PIN works on this computer, but a phone needs 6 digits: the short one is not even tried
     s.app.users.save({ id: owner.id, full_name: 'Owner', username: 'owner', role_id: owner.role_id, pin: '2468', can_login: true, active: true }, { user: owner, ip: '127.0.0.1' });
-    const ok = await request(s.port, { method: 'POST', pathName: '/api/auth/login', headers: ts, body: { user_id: owner.id, pin: '2468', password: '2468', remember: true } });
+    const short = await request(s.port, { method: 'POST', pathName: '/api/auth/login', headers: ts, body: { user_id: owner.id, pin: '2468', password: '2468', remember: true } });
+    assert.equal(short.status, 401);
+    assert.equal(short.json.error.code, 'remote_pin_short');
+    assert.equal(short.json.error.details.min, 6);
+    assert.equal(s.app.db.val('SELECT failed_logins FROM users WHERE id = ?', [owner.id]), 0, 'the user is not paused for it');
+    assert.equal(s.app.db.get('SELECT count FROM login_failures WHERE ip = ?', ['100.70.1.2']).count, 2, 'the phone address is');
+    const pc = await request(s.port, { method: 'POST', pathName: '/api/auth/login', body: { user_id: owner.id, pin: '2468', password: '2468', remember: true } });
+    assert.equal(pc.status, 200, 'this computer still takes the 4-digit PIN');
+
+    // with a 6-digit PIN, the phone signs in and gets a cookie that only travels over https
+    s.app.users.save({ id: owner.id, full_name: 'Owner', username: 'owner', role_id: owner.role_id, pin: '246810', can_login: true, active: true }, { user: owner, ip: '127.0.0.1' });
+    const ok = await request(s.port, { method: 'POST', pathName: '/api/auth/login', headers: ts, body: { user_id: owner.id, pin: '246810', password: '246810', remember: true } });
     assert.equal(ok.status, 200);
     const cookie = String(ok.headers['set-cookie']);
     assert.match(cookie, /rm_sid=[^;]+; Path=\/; HttpOnly; SameSite=Strict; Secure; Max-Age=\d+/);

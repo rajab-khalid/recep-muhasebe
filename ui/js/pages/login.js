@@ -6,6 +6,7 @@ import { initials } from '../core/format.js';
 import { Btn, Icon, Input, Field, Check, Spinner, Notice } from '../core/ui.js';
 import { loadBoot } from '../core/session.js';
 import { useStore } from '../core/store.js';
+import { offline } from '../core/offline.js';
 import { dateTime } from '../core/format.js';
 
 export function Login() {
@@ -30,6 +31,8 @@ export function Login() {
       setUsers(u);
       if (u.length === 1) setSel(u[0]);
     }).catch(() => setUsers([]));
+    // a phone removed on the shop computer (lost) drops its offline copy here, before anyone signs in
+    offline.checkRemoved().catch(() => {});
   }, []);
 
   const submit = async (val) => {

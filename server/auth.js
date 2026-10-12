@@ -76,6 +76,8 @@ function verifySecret(secret, stored) {
 }
 
 function newToken() { return crypto.randomBytes(32).toString('hex'); }
+/** a session's public name: shown on the screens and used to end it, never the secret token itself */
+function newSessionId() { return crypto.randomBytes(12).toString('hex'); }
 
 function hasPerm(perms, p) {
   if (!perms) return false;
@@ -83,4 +85,4 @@ function hasPerm(perms, p) {
   return perms.includes(p);
 }
 
-module.exports = { PERMISSIONS, ALL_PERMISSIONS, ROLE_DEFAULTS, hashSecret, verifySecret, newToken, hasPerm };
+module.exports = { PERMISSIONS, ALL_PERMISSIONS, ROLE_DEFAULTS, hashSecret, verifySecret, newToken, newSessionId, hasPerm };

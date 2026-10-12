@@ -333,6 +333,15 @@ const MIGRATIONS = [
   CREATE INDEX phone_ops_device ON phone_ops(device_id, status);
   CREATE INDEX phone_ops_created ON phone_ops(created_at);
   `,
+  // ---------------------------------------------------------------- v6: a session can be ended on its own (shown by a public id, never its
+  // token) or with its phone; the length of a PIN (a phone signs in only with 6 digits or more)
+  `
+  ALTER TABLE sessions ADD COLUMN id TEXT;
+  ALTER TABLE sessions ADD COLUMN device_id TEXT;
+  UPDATE sessions SET id = lower(hex(randomblob(12))) WHERE id IS NULL;
+  CREATE INDEX sessions_user ON sessions(user_id);
+  ALTER TABLE users ADD COLUMN pin_len INTEGER;
+  `,
 ];
 
 module.exports = { MIGRATIONS };

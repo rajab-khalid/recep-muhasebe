@@ -4,7 +4,7 @@ import { t, onLang, setLang, LANGS, getLang } from './core/i18n.js';
 import { store, useStore, can, setPrefs, boot } from './core/store.js';
 import { useRoute, navigate, back, canGoBack, trapBack } from './core/router.js';
 import { api, ApiError } from './core/api.js';
-import { money, num, dateTime, initials, date as fdate, rateText } from './core/format.js';
+import { money, num, dateTime, initials, date as fdate, rateText, uaName } from './core/format.js';
 import {
   Icon, IconBtn, Btn, Modal, ModalHost, ToastHost, openModal, toast, errToast, Field, NumInput, Input, Spinner, Empty, MenuButton, useHotkeys, Pill, confirmDialog, usePhone,
 } from './core/ui.js';
@@ -244,7 +244,7 @@ function PhoneMenuHead({ onClose }) {
 
 function PhoneMenuFoot({ onClose }) {
   return html`<div class="side-phone-foot">
-    <button type="button" class="nav-item" onClick=${() => { onClose(); openModal(ChangeSecretDialog); }}><${Icon} name="key-round" /><span>${t('user.change_secret')}</span></button>
+    <button type="button" class="nav-item" onClick=${() => { onClose(); openModal(ChangeSecretDialog).then((ok) => ok && refreshBoot()); }}><${Icon} name="key-round" /><span>${t('user.change_secret')}</span></button>
     <button type="button" class="nav-item" onClick=${() => { onClose(); store.set({ locked: true }); }}><${Icon} name="lock" /><span>${t('user.lock')}</span></button>
     <button type="button" class="nav-item danger" onClick=${() => logout()}><${Icon} name="log-out" /><span>${t('user.logout')}</span></button>
   </div>`;
@@ -404,7 +404,7 @@ function Topbar({ onMenu }) {
       <${MenuButton} iconOnly icon="globe" title=${t('common.language')} items=${langItems} />
       <${MenuButton} iconOnly icon="user" title=${u && u.full_name} items=${[
         { label: u && u.full_name, icon: 'user', disabled: true },
-        { label: t('user.change_secret'), icon: 'lock', onClick: () => openModal(ChangeSecretDialog) },
+        { label: t('user.change_secret'), icon: 'lock', onClick: () => openModal(ChangeSecretDialog).then((ok) => ok && refreshBoot()) },
         { label: t('user.lock'), icon: 'lock', onClick: () => store.set({ locked: true }) },
         '-',
         { label: t('user.logout'), icon: 'log-out', danger: true, onClick: () => logout() },
@@ -414,10 +414,22 @@ function Topbar({ onMenu }) {
 }
 
 /* ------------------------------------------------------------------ notifications */
+const warned = new Set(); // security warnings already shown as a pop-up in this window (per signed-in user)
+
 function useNotifications() {
   useEffect(() => {
     let alive = true;
-    const load = () => api.get('/api/notifications').then((n) => { if (alive) store.set({ notifications: n }); }).catch(() => {});
+    const load = () => api.get('/api/notifications').then((n) => {
+      if (!alive) return;
+      store.set({ notifications: n });
+      // wrong PINs from a phone or another device: say it at once, not only in the bell
+      const who = (store.state.user || {}).id || '';
+      for (const x of n) {
+        if (x.kind !== 'login_fails' || x.read || warned.has(`${who}|${x.key}`)) continue;
+        warned.add(`${who}|${x.key}`);
+        toast(notifText(x), 'err', 12000);
+      }
+    }).catch(() => {});
     load();
     const tm = setInterval(load, 60000);
     return () => { alive = false; clearInterval(tm); };
@@ -425,6 +437,7 @@ function useNotifications() {
 }
 
 const NOTIF_META = {
+  login_fails: { icon: 'shield-alert', go: () => (can('settings.manage') ? '/settings/security' : '/users') },
   stock_out: { icon: 'package-minus', go: (n) => `/products/${n.ref}` },
   stock_low: { icon: 'package', go: (n) => `/products/${n.ref}` },
   overdue: { icon: 'clock', go: (n) => `/doc/${n.ref}` },
@@ -433,6 +446,19 @@ const NOTIF_META = {
   backup_old: { icon: 'database', go: () => '/settings/backup' },
 };
 
+function notifText(n) {
+  switch (n.kind) {
+    case 'login_fails': return t('notif.login_fails', { name: n.name || '?', n: n.value, device: n.agent ? uaName(n.agent) : t('notif.unknown_device'), time: dateTime(n.ts) });
+    case 'stock_out': return t('notif.stock_out', { name: n.name });
+    case 'stock_low': return t('notif.stock_low', { name: n.name, qty: num(n.value, 2) });
+    case 'overdue': return t('notif.overdue', { name: n.name, days: n.value });
+    case 'recurring': return t('notif.recurring', { name: n.name || '' });
+    case 'service_done': return t('notif.service_done', { no: n.name });
+    case 'backup_old': return t('notif.backup_old');
+    default: return n.kind;
+  }
+}
+
 function NotificationsDialog({ close }) {
   const list = useStore((s) => s.notifications);
   const markAll = async () => {
@@ -440,17 +466,7 @@ function NotificationsDialog({ close }) {
     await api.post('/api/notifications/read', { keys });
     store.set({ notifications: list.map((n) => ({ ...n, read: true })) });
   };
-  const text = (n) => {
-    switch (n.kind) {
-      case 'stock_out': return t('notif.stock_out', { name: n.name });
-      case 'stock_low': return t('notif.stock_low', { name: n.name, qty: num(n.value, 2) });
-      case 'overdue': return t('notif.overdue', { name: n.name, days: n.value });
-      case 'recurring': return t('notif.recurring', { name: n.name || '' });
-      case 'service_done': return t('notif.service_done', { no: n.name });
-      case 'backup_old': return t('notif.backup_old');
-      default: return n.kind;
-    }
-  };
+  const text = notifText;
   return html`<${Modal} title=${t('notif.title')} close=${close} icon="bell"
     foot=${html`<${Btn} onClick=${markAll} disabled=${!list.some((n) => !n.read)}>${t('notif.mark_all')}</${Btn}><${Btn} kind="primary" onClick=${() => close()}>${t('common.close')}</${Btn}>`}>
     ${!list.length ? html`<${Empty} icon="circle-check" title=${t('notif.none')} />` : html`<div class="mini-list" style="margin:-18px">
@@ -570,7 +586,8 @@ export function ChangeSecretDialog({ close }) {
   return html`<${Modal} title=${t('user.change_secret')} close=${close} onSubmit=${save} foot=${html`<${Btn} onClick=${() => close()}>${t('common.cancel')}</${Btn}><${Btn} type="submit" kind="primary" disabled=${!pin && !pw}>${t('common.save')}</${Btn}>`}>
     <div class="col gap-12">
       <${Field} label=${t('user.current_secret')}><${Input} type="password" value=${cur} onValue=${setCur} autoFocus /></${Field}>
-      <${Field} label=${t('user.new_pin')} hint=${t('user.pin_hint')}><${Input} type="password" inputmode="numeric" maxlength="8" value=${pin} onValue=${setPin} /></${Field}>
+      <${Field} label=${t('user.new_pin')} hint=${t('user.pin_hint')}><${Input} type="password" inputmode="numeric" maxlength="8" value=${pin} onValue=${(v) => setPin(v.replace(/\D/g, ''))} /></${Field}>
+      ${pin.length >= 4 && pin.length < 6 && html`<div class="small warn-text">${t('user.pin_pc_only')}</div>`}
       <${Field} label=${t('user.new_password')}><${Input} type="password" value=${pw} onValue=${setPw} /></${Field}>
     </div>
   </${Modal}>`;

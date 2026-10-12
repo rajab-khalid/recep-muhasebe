@@ -145,6 +145,7 @@ module.exports = (app) => {
         db.insert('users', {
           id, username: null, full_name: st.name || '—', role_id: st.role === 'cashier' ? salesRole : mgrRole, phone: st.phone || null,
           pin_hash: st.pin && /^\d{4,8}$/.test(String(st.pin)) ? hashSecret(st.pin) : null,
+          pin_len: st.pin && /^\d{4,8}$/.test(String(st.pin)) ? String(st.pin).length : null,
           can_login: st.pin && /^\d{4,8}$/.test(String(st.pin)) ? 1 : 0, active: st.active === false ? 0 : 1, created_at: U.nowIso(), updated_at: U.nowIso(),
         });
         sMap[st.id] = id;

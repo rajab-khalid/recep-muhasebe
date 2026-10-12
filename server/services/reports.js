@@ -501,6 +501,26 @@ module.exports = (app) => {
   function notifications(user) {
     const today = U.today();
     const list = [];
+    if (app.users.can(user, 'users.manage')) {
+      /*
+       * Wrong PINs typed from phones or other devices in the last 7 days, once they paused a user (5 misses in a
+       * row) or an address (20 in a quarter of an hour). Each new pause brings the warning back as unread.
+       * The device is named from a session it has (or had) here; an unknown one has never been signed in.
+       */
+      const since = new Date(Date.now() - 7 * 86400000).toISOString();
+      const fails = db.all(`SELECT ip, entity_id, MAX(user_name) AS name, COUNT(*) AS n, MAX(ts) AS last,
+          SUM(CASE WHEN msg LIKE '%"wait"%' THEN 1 ELSE 0 END) AS pauses
+        FROM audit_log WHERE action = 'login_failed' AND ts >= ? AND ip IS NOT NULL
+          AND ip NOT IN ('127.0.0.1', '::1', '::ffff:127.0.0.1', 'offline')
+        GROUP BY ip, entity_id HAVING pauses > 0 ORDER BY last DESC LIMIT 10`, [since]);
+      for (const f of fails) {
+        const s = db.get('SELECT agent FROM sessions WHERE ip = ? ORDER BY last_seen DESC LIMIT 1', [f.ip]);
+        list.push({
+          key: `loginfail:${f.ip}:${f.entity_id || f.name || ''}:${f.pauses}`, kind: 'login_fails', level: 'danger', ref: f.entity_id,
+          name: f.name || '', value: f.n, ip: f.ip, agent: s ? s.agent : null, ts: f.last,
+        });
+      }
+    }
     if (app.users.can(user, 'stock.view')) {
       const low = app.products.list({ stock: 'low', limit: 50, sort: 'stock_asc' }).rows;
       for (const p of low) list.push({ key: `stock:${p.id}:${p.stock}`, kind: p.stock <= 0 ? 'stock_out' : 'stock_low', level: p.stock <= 0 ? 'danger' : 'warn', ref: p.id, name: p.name, value: p.stock });

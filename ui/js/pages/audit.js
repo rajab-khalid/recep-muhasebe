@@ -5,7 +5,7 @@ import { api } from '../core/api.js';
 import { boot } from '../core/store.js';
 import { useTitle } from '../core/page.js';
 import { navigate } from '../core/router.js';
-import { dateTime, money, rateText } from '../core/format.js';
+import { dateTime, money, rateText, uaName } from '../core/format.js';
 import { Btn, Drawer, Select, Table, Loading, Empty, Notice, Pill, DateRange, periodRange, SearchBox, useAsync, useDebounced, openModal } from '../core/ui.js';
 
 const ENTITIES = ['doc', 'payment', 'partner', 'product', 'money_account', 'transfer', 'finance_entry', 'stock_count', 'user', 'role', 'settings', 'currency', 'system', 'partner_move', 'money_move', 'vehicle', 'recurring', 'warehouse', 'price_list', 'category', 'brand', 'legacy'];
@@ -45,7 +45,12 @@ export function auditText(r) {
     case 'setup': return t('audit.msg.setup');
     case 'rate': return v.code === 'IQD' ? rateText(v.rate) : `1 USD = ${v.rate} ${v.code}`;
     case 'restore': return v.name || t('audit.msg.uploaded_file');
-    case 'login_failed': return v.wait ? (v.wait < 90 ? t('audit.msg.paused_sec', { n: v.wait }) : t('audit.msg.paused_min', { n: Math.round(v.wait / 60) })) : t('audit.msg.login_failed');
+    case 'login_failed':
+      // short: a phone tried a PIN shorter than 6 digits (not even checked); the address may be paused for it
+      if (v.short) return v.wait ? `${t('audit.msg.login_short')} · ${t('audit.msg.paused_only', { n: Math.max(1, Math.round(v.wait / 60)) })}` : t('audit.msg.login_short');
+      return v.wait ? (v.wait < 90 ? t('audit.msg.paused_sec', { n: v.wait }) : t('audit.msg.paused_min', { n: Math.round(v.wait / 60) })) : t('audit.msg.login_failed');
+    case 'session_ended': return t('audit.msg.session_ended', { name: v.name, device: [v.code, v.agent ? uaName(v.agent) : v.ip].filter(Boolean).join(' · ') || '—' });
+    case 'sessions_ended': return t('audit.msg.sessions_ended', v);
     case 'user_unlocked': return t('audit.msg.user_unlocked', v);
     case 'secret_reset': return t('audit.msg.secret_reset', v);
     case 'phone_on': return t('audit.msg.phone_on');
@@ -65,7 +70,7 @@ export function Audit({ query = {} }) {
   const dq = useDebounced(f.q, 300);
   const { data, loading, error } = useAsync(() => api.get('/api/reports/audit', { ...f, q: dq, entity_id: query.entity_id, limit: 2000 }), [f.from, f.to, f.user_id, f.entity, f.action, dq]);
   const rows = data || [];
-  const actionKind = (a0) => { const a = actionKey(a0); return (['cancel', 'delete', 'delete_draft', 'login_failed', 'deactivate', 'restore'].includes(a) ? 'out' : ['create', 'post', 'login'].includes(a) ? 'in' : ['update', 'price_change', 'balance_adjust', 'settings', 'rate'].includes(a) ? 'warn' : ''); };
+  const actionKind = (a0) => { const a = actionKey(a0); return (['cancel', 'delete', 'delete_draft', 'login_failed', 'deactivate', 'restore', 'sign_out'].includes(a) ? 'out' : ['create', 'post', 'login'].includes(a) ? 'in' : ['update', 'price_change', 'balance_adjust', 'settings', 'rate'].includes(a) ? 'warn' : ''); };
   return html`<div class="page">
     <div class="toolbar">
       <${SearchBox} value=${f.q} onValue=${(v) => setF({ ...f, q: v })} cls="search" />

@@ -85,6 +85,7 @@ module.exports = (app) => {
         full_name: fullName, username: (U.str(admin.username, 60) || 'admin').toLowerCase(), role_id: roleId,
         password_hash: admin.password ? hashSecret(admin.password) : null,
         pin_hash: admin.pin && /^\d{4,8}$/.test(String(admin.pin)) ? hashSecret(admin.pin) : null,
+        pin_len: admin.pin && /^\d{4,8}$/.test(String(admin.pin)) ? String(admin.pin).length : null,
         can_login: 1, active: 1, lang, updated_at: U.nowIso(),
       };
       if (userId) db.update('users', userId, fields);

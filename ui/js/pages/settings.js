@@ -7,7 +7,7 @@ import { can, boot, useStore } from '../core/store.js';
 import { useTitle } from '../core/page.js';
 import { navigate } from '../core/router.js';
 import { refreshBoot } from '../core/session.js';
-import { money, num, today, date as fdate, dateTime, usdIqd, fileSize } from '../core/format.js';
+import { money, num, today, date as fdate, dateTime, usdIqd, fileSize, uaName } from '../core/format.js';
 import {
   Icon, Btn, IconBtn, Modal, Field, Input, NumInput, Select, Textarea, Segmented, Check, Table, Panel, Empty, Loading, Notice, Pill, KV,
   useAsync, openModal, toast, errToast, confirmDialog, promptDialog, readImage, pickFile,
@@ -553,16 +553,6 @@ function NumberingSettings() {
   </${Panel}>`;
 }
 
-/** "Recep Muhasebe · Windows", "Chrome · Android" from a browser's user-agent text */
-function deviceName(ua) {
-  const u = String(ua || '');
-  if (!u) return '—';
-  const app = /Electron|recep-muhasebe/i.test(u) ? 'Recep Muhasebe' : /Edg\//.test(u) ? 'Edge' : /OPR\//.test(u) ? 'Opera' : /Firefox\//.test(u) ? 'Firefox'
-    : /Chrome\//.test(u) ? 'Chrome' : /Safari\//.test(u) ? 'Safari' : '';
-  const os = /Windows/.test(u) ? 'Windows' : /Android/.test(u) ? 'Android' : /iPhone|iPad/.test(u) ? 'iOS' : /Mac OS X/.test(u) ? 'macOS' : /Linux/.test(u) ? 'Linux' : '';
-  return [app, os].filter(Boolean).join(' · ') || u.slice(0, 40);
-}
-
 /* ------------------------------------------------------------------ labels */
 function LabelSettings() {
   const g = useSettingsGroup('labels');
@@ -701,12 +691,6 @@ function NetworkSettings() {
         <b class="ltr">http://${a.address}:${port}</b><span class="tiny muted">${a.name}</span></div>`)}</div>
         <p class="small muted mt-12">${t('settings.connect_hint')}</p>`}
     </${Panel}>`}
-    ${info && html`<${Panel} title=${t('settings.sessions')} icon="monitor" body=${false}><${Table} compact rows=${info.sessions} columns=${[
-      { key: 'u', label: t('common.user'), render: (s) => s.full_name },
-      { key: 'ip', label: 'IP', render: (s) => html`<span class="ltr small">${s.ip || ''}</span>` },
-      { key: 'agent', label: t('settings.device'), render: (s) => html`<span class="small muted" title=${s.agent || ''}>${deviceName(s.agent)}</span>` },
-      { key: 'seen', label: t('settings.last_seen'), render: (s) => html`<span class="small">${dateTime(s.last_seen)}</span>` },
-    ]} /></${Panel}>`}
   </div>`;
 }
 
@@ -751,6 +735,7 @@ function PhoneSettings() {
   const step1 = st.installed && st.running;
   const step2 = step1 && st.on;
   const noPin = !me.has_pin && !me.has_password;
+  const shortPin = !me.has_password && me.has_pin && me.pin_len && me.pin_len < 6; // a phone signs in with 6 digits or more
   const stepCls = (done, active) => `phone-step ${done ? 'done' : active ? 'active' : ''}`;
   const stepNo = (n, done) => html`<span class="ps-num">${done ? html`<${Icon} name="check" size="sm" />` : n}</span>`;
   return html`<div class="stack">
@@ -800,7 +785,9 @@ function PhoneSettings() {
             </ul>
             ${noPin ? html`<${Notice} kind="warn"><div>${t('phone.no_pin')}</div>
                 <div class="mt-8"><${Btn} size="sm" icon="key-round" onClick=${() => openModal(ChangeSecretDialog).then((ok) => ok && refreshBoot())}>${t('phone.set_pin')}</${Btn}></div></${Notice}>`
-              : html`<p class="small muted">${t('phone.pin_note')}</p>`}
+              : shortPin ? html`<${Notice} kind="warn"><div>${t('phone.pin_short', { n: me.pin_len })}</div>
+                <div class="mt-8"><${Btn} size="sm" icon="key-round" onClick=${() => openModal(ChangeSecretDialog).then((ok) => ok && refreshBoot())}>${t('phone.change_pin')}</${Btn}></div></${Notice}>`
+                : html`<p class="small muted">${t('phone.pin_note')}</p>`}
           </div>
         </li>
       </ol>
@@ -814,16 +801,59 @@ function PhoneSettings() {
 /* ------------------------------------------------------------------ security */
 function SecuritySettings() {
   const g = useSettingsGroup('security');
-  return html`<${Panel} title=${t('settings.security')} icon="shield">
-    <div class="col gap-12">
-      <${Check} checked=${!!g.val.lock_on_start} onValue=${(v) => g.set({ lock_on_start: v })} label=${t('settings.lock_on_start')} />
-      <div class="form-2">
-        <${Field} label=${t('settings.idle_lock')} hint=${t('settings.idle_lock_hint')}><${NumInput} value=${g.val.idle_lock_minutes} onValue=${(v) => g.set({ idle_lock_minutes: v || 0 })} dec=${0} /></${Field}>
-        <${Field} label=${t('settings.session_days')} hint=${t('settings.session_days_hint')}><${NumInput} value=${g.val.session_days} onValue=${(v) => g.set({ session_days: v || 90 })} dec=${0} /></${Field}>
+  return html`<div class="stack">
+    <${Panel} title=${t('settings.security')} icon="shield">
+      <div class="col gap-12">
+        <${Check} checked=${!!g.val.lock_on_start} onValue=${(v) => g.set({ lock_on_start: v })} label=${t('settings.lock_on_start')} />
+        <div class="form-2">
+          <${Field} label=${t('settings.idle_lock')} hint=${t('settings.idle_lock_hint')}><${NumInput} value=${g.val.idle_lock_minutes} onValue=${(v) => g.set({ idle_lock_minutes: v || 0 })} dec=${0} /></${Field}>
+          <${Field} label=${t('settings.session_days')} hint=${t('settings.session_days_hint')}><${NumInput} value=${g.val.session_days} onValue=${(v) => g.set({ session_days: v || 90 })} dec=${0} /></${Field}>
+        </div>
+        <${Notice}>${t('settings.security_text')}</${Notice}>
       </div>
-      <${Notice}>${t('settings.security_text')}</${Notice}>
-    </div>
-    <${SaveBar} g=${g} />
+      <${SaveBar} g=${g} />
+    </${Panel}>
+    ${can('users.manage') && html`<${OpenSessions} />`}
+  </div>`;
+}
+
+/*
+ * Who is signed in where: this computer, other computers, phones. A lost or unknown device is signed out
+ * here (it asks for a PIN again); the screen in use is never signed out from this list.
+ */
+const isComputer = (ua) => /Windows|Macintosh|X11|Linux x86_64/.test(ua || '') && !/Android|iPhone|iPad|Mobile/.test(ua || '');
+
+function OpenSessions() {
+  const offline = !!(boot().server || {}).offline;
+  const { data, error, reload } = useAsync(() => (offline ? Promise.resolve(null) : api.get('/api/auth/sessions')), []);
+  const [busy, setBusy] = useState(false);
+  const label = (s) => (s.here ? t('settings.this_pc') : [s.device_code, uaName(s.agent)].filter(Boolean).join(' · '));
+  const end = async (s) => {
+    const text = t('settings.sign_out_text', { name: s.full_name, device: label(s) }) + (s.device_code ? ` ${t('settings.sign_out_copy_note', { code: s.device_code })}` : '');
+    if (!(await confirmDialog({ title: t('settings.sign_out'), text, okText: t('settings.sign_out'), danger: true }))) return;
+    setBusy(true);
+    try { await api.post(`/api/auth/sessions/${s.id}/end`); toast(t('settings.sign_out_done')); } catch (e) { errToast(e); } finally { setBusy(false); reload(); }
+  };
+  const endOthers = async () => {
+    if (!(await confirmDialog({ title: t('settings.sign_out_others'), text: t('settings.sign_out_others_text'), okText: t('settings.sign_out_others'), danger: true }))) return;
+    setBusy(true);
+    try { const r = await api.post('/api/auth/sessions/end-others'); toast(t('settings.sign_out_others_done', { n: r.n })); } catch (e) { errToast(e); } finally { setBusy(false); reload(); }
+  };
+  const others = (data || []).filter((s) => !s.current).length;
+  return html`<${Panel} title=${t('settings.sessions')} icon="monitor"
+    tools=${data && others > 0 && html`<${Btn} size="sm" kind="ghost" icon="log-out" onClick=${endOthers} disabled=${busy}>${t('settings.sign_out_others')}</${Btn}>`}>
+    <p class="small dim" style="margin-top:0;max-width:72ch">${t('settings.sessions_text')}</p>
+    ${offline ? html`<${Notice} kind="warn">${t('err.needs_online')}</${Notice}>`
+      : error ? html`<${Notice} kind="err">${error.message}</${Notice}>`
+        : !data ? html`<${Loading} />`
+          : html`<div class="mini-list">${data.map((s) => html`<div class="mini-row" key=${s.id}>
+            <${Icon} name=${s.here || isComputer(s.agent) ? 'monitor' : 'smartphone'} />
+            <div class="grow" style="min-width:0">
+              <div class="row gap-6 wrap"><b dir="auto">${s.full_name}</b><span class="small">${label(s)}</span>${s.current && html`<${Pill} kind="info">${t('settings.this_device')}</${Pill}>`}</div>
+              <div class="tiny muted">${t('settings.last_seen')}: ${dateTime(s.last_seen)}${s.ip && !s.here ? html` · <span class="ltr">${s.ip}</span>` : null}</div>
+            </div>
+            ${!s.current && html`<${Btn} size="sm" kind="ghost" icon="log-out" onClick=${() => end(s)} disabled=${busy}>${t('settings.sign_out')}</${Btn}>`}
+          </div>`)}</div>`}
   </${Panel}>`;
 }
 

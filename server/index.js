@@ -149,7 +149,7 @@ function startServer(opts = {}) {
       }
       // the data changed: phones keeping an offline copy will fetch a new one
       // (a changed PIN counts too: the phone's copy must not keep accepting the old one)
-      if (req.method !== 'GET' && !duplicate && !/^\/api\/(auth\/(login|logout|verify)|phone\/|notifications\/)/.test(pathname)) app.noteChange();
+      if (req.method !== 'GET' && !duplicate && !/^\/api\/(auth\/(login|logout|verify|sessions)|phone\/|notifications\/)/.test(pathname)) app.noteChange();
       const headers = {};
       if (duplicate) headers['X-Op-Duplicate'] = '1'; // the answer kept from the first time this write was sent
       if (setCookies.length) headers['Set-Cookie'] = setCookies;

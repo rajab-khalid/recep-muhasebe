@@ -260,12 +260,29 @@ export const offline = {
    * registers the phone anew and sends that work first)
    */
   async revoked() {
-    const st = await rpc('status').catch(() => null);
-    if (!st || !st.pending) { try { await rpc('wipe'); } catch (e) { /* nothing kept */ } }
+    // open the copy first (a worker that has just started has not opened it, and would count no work in it):
+    // only a copy known to hold no work goes; one that still holds work, or cannot be read, stays
+    const st = await rpc('open').catch(() => null);
+    const keep = !st || st.pending > 0;
+    if (!keep) { try { await rpc('wipe'); } catch (e) { /* nothing kept */ } }
     const cfg = readCfg();
     if (cfg) writeCfg({ ...cfg, on: false, deviceId: newOpId(), code: null });
     this.setToken(null);
-    setState({ copy: st && st.pending ? st : null, problems: [], error: { code: 'device_revoked' } });
+    setState({ copy: keep && st ? st : null, problems: [], error: { code: 'device_revoked' } });
+  },
+
+  /**
+   * At the sign-in screen: a phone removed on the shop computer (lost) was signed out too, so it cannot learn
+   * that through a session. It asks the computer directly and, if removed, drops its copy (see revoked).
+   */
+  async checkRemoved() {
+    const cfg = readCfg();
+    if (!cfg || !cfg.on || !cfg.deviceId || this.mode === 'offline') return false;
+    let r = null;
+    try { r = await pcJson(`/api/phone/removed?device=${encodeURIComponent(cfg.deviceId)}`); } catch (e) { return false; }
+    if (!r || !r.removed) return false;
+    await this.revoked();
+    return true;
   },
 
   /** switch offline work on for this phone: it gets its number series and a first copy */
@@ -273,8 +290,18 @@ export const offline = {
     const user = store.state.user;
     if (!isOwner(user)) throw Object.assign(new Error('offline_owner_only'), { code: 'offline_owner_only' });
     const old = readCfg();
-    const deviceId = (old && old.deviceId) || newOpId();
-    const reg = await pcJson('/api/phone/register', { method: 'POST', body: { device_id: deviceId, name: deviceName() } });
+    let deviceId = (old && old.deviceId) || newOpId();
+    const register = (id) => pcJson('/api/phone/register', { method: 'POST', body: { device_id: id, name: deviceName() } });
+    let reg;
+    try {
+      reg = await register(deviceId);
+    } catch (e) {
+      // this phone was removed on the shop computer while its offline work was off: it starts under a new id
+      // (work still kept in its copy is sent first all the same, by the refresh below)
+      if (e.code !== 'device_revoked') throw e;
+      deviceId = newOpId();
+      reg = await register(deviceId);
+    }
     writeCfg({ on: true, deviceId, ownerId: user.id, ownerName: user.full_name, code: reg.code });
     // ask the browser to keep the copy even when the phone runs short of space
     try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) { /* the browser decides */ }

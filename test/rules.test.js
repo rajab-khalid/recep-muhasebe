@@ -159,63 +159,67 @@ test('wrong PINs pause the user (network pauses survive a restart), an address t
   const { app, ctx } = freshApp('lock');
   const cash = cashier(app, ctx);
   const id = cash.user.id;
+  const owner = app.users.list().find((u) => u.username === 'owner');
+  // signing in from the network takes 6 digits or more
+  app.users.save({ ...app.users.get(id), id, pin: '432100' }, ctx);
+  app.users.save({ ...app.users.get(owner.id), id: owner.id, pin: '123456' }, ctx);
   const NET = '192.168.1.50';
   const tryPin = (pin, ip = NET, a = app) => code(() => a.users.login({ user_id: id, pin, ip }));
-  for (let i = 0; i < 5; i++) assert.equal(tryPin('0000'), 'wrong_credentials'); // the 5th miss starts a pause
-  assert.equal(tryPin('4321'), 'too_many_attempts', 'even the right PIN waits');
+  for (let i = 0; i < 5; i++) assert.equal(tryPin('000000'), 'wrong_credentials'); // the 5th miss starts a pause
+  assert.equal(tryPin('432100'), 'too_many_attempts', 'even the right PIN waits');
   // misses from the network do not lock the shop's own computer
-  assert.ok(app.users.login({ user_id: id, pin: '4321', ip: '127.0.0.1' }).token);
+  assert.ok(app.users.login({ user_id: id, pin: '432100', ip: '127.0.0.1' }).token);
   // the network pause is in the database: a restarted program still knows it, and the users list shows it
   const app2 = createApp({ dataDir: app.dataDir });
-  assert.equal(tryPin('4321', NET, app2), 'too_many_attempts');
+  assert.equal(tryPin('432100', NET, app2), 'too_many_attempts');
   assert.ok(app2.users.get(id).locked_until);
   // the second round of 5 misses pauses longer (minutes)
   app2.db.run('UPDATE users SET locked_until = NULL WHERE id = ?', [id]);
-  for (let i = 0; i < 5; i++) assert.equal(tryPin('1111', NET, app2), 'wrong_credentials');
+  for (let i = 0; i < 5; i++) assert.equal(tryPin('111111', NET, app2), 'wrong_credentials');
   let e = null;
-  try { app2.users.login({ user_id: id, pin: '4321', ip: NET }); } catch (x) { e = x; }
+  try { app2.users.login({ user_id: id, pin: '432100', ip: NET }); } catch (x) { e = x; }
   assert.equal(e && e.code, 'too_many_attempts_min');
   assert.ok(e.details.min >= 2);
   // misses typed on this computer pause it too (kept in memory only)
   for (let i = 0; i < 5; i++) assert.equal(tryPin('2222', '127.0.0.1', app2), 'wrong_credentials');
-  assert.equal(tryPin('4321', '127.0.0.1', app2), 'too_many_attempts');
+  assert.equal(tryPin('432100', '127.0.0.1', app2), 'too_many_attempts');
   // an admin unlocks both; the right PIN works again and clears the count
   app2.users.unlock(id, ctx);
-  assert.ok(app2.users.login({ user_id: id, pin: '4321', ip: NET }).token);
-  assert.ok(app2.users.login({ user_id: id, pin: '4321', ip: '127.0.0.1' }).token);
+  assert.ok(app2.users.login({ user_id: id, pin: '432100', ip: NET }).token);
+  assert.ok(app2.users.login({ user_id: id, pin: '432100', ip: '127.0.0.1' }).token);
   assert.equal(app2.db.val('SELECT failed_logins FROM users WHERE id = ?', [id]), 0);
   // one address guessing across users is paused after 20 misses; this computer and other addresses are not
-  const owner = app2.users.list().find((u) => u.username === 'owner');
   for (let i = 0; i < 20; i++) {
     const who = i % 2 ? owner.id : id;
     app2.db.run('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?', [who]);
-    code(() => app2.users.login({ user_id: who, pin: '9999', ip: '192.168.1.77' }));
+    code(() => app2.users.login({ user_id: who, pin: '999999', ip: '192.168.1.77' }));
   }
   app2.db.run('UPDATE users SET failed_logins = 0, locked_until = NULL');
-  assert.equal(code(() => app2.users.login({ user_id: owner.id, pin: '1234', ip: '192.168.1.77' })), 'too_many_attempts_min');
-  assert.ok(app2.users.login({ user_id: owner.id, pin: '1234', ip: '127.0.0.1' }).token);
-  assert.ok(app2.users.login({ user_id: owner.id, pin: '1234', ip: '192.168.1.78' }).token);
+  assert.equal(code(() => app2.users.login({ user_id: owner.id, pin: '123456', ip: '192.168.1.77' })), 'too_many_attempts_min');
+  assert.ok(app2.users.login({ user_id: owner.id, pin: '123456', ip: '127.0.0.1' }).token);
+  assert.ok(app2.users.login({ user_id: owner.id, pin: '123456', ip: '192.168.1.78' }).token);
 });
 
 test('one attempt is one guess; long user names are cut; changing a PIN needs the current one', () => {
   const { app, ctx } = freshApp('guess');
   const cash = cashier(app, ctx);
   const id = cash.user.id;
+  app.users.save({ ...app.users.get(id), id, pin: '432100' }, ctx);
   // password and pin fields carrying two different guesses: only one is tried
-  assert.equal(code(() => app.users.login({ user_id: id, password: '1111', pin: '4321', ip: '192.168.1.5' })), 'wrong_credentials');
-  assert.ok(app.users.login({ user_id: id, password: '4321', pin: '4321', ip: '192.168.1.5' }).token);
-  assert.ok(app.users.login({ user_id: id, pin: '4321', ip: '192.168.1.5' }).token);
+  assert.equal(code(() => app.users.login({ user_id: id, password: '111111', pin: '432100', ip: '192.168.1.5' })), 'wrong_credentials');
+  assert.ok(app.users.login({ user_id: id, password: '432100', pin: '432100', ip: '192.168.1.5' }).token);
+  assert.ok(app.users.login({ user_id: id, pin: '432100', ip: '192.168.1.5' }).token);
   // a huge user name is not stored in full
-  code(() => app.users.login({ username: 'x'.repeat(100000), password: 'a', ip: '192.168.1.6' }));
+  code(() => app.users.login({ username: 'x'.repeat(100000), password: 'a'.repeat(8), ip: '192.168.1.6' }));
   const row = app.db.get("SELECT user_name FROM audit_log WHERE action = 'login_failed' ORDER BY ts DESC LIMIT 1");
   assert.ok(row.user_name.length <= 60);
   // a PIN-only user must give the current PIN to set a new one; misses count like sign-in misses
-  assert.equal(code(() => app.users.changeOwnSecret(id, { current: '', pin: '5555' }, '192.168.1.5')), 'wrong_password');
-  app.users.changeOwnSecret(id, { current: '4321', pin: '5555' }, '192.168.1.5');
-  assert.ok(app.users.login({ user_id: id, pin: '5555', ip: '127.0.0.1' }).token);
+  assert.equal(code(() => app.users.changeOwnSecret(id, { current: '', pin: '555555' }, '192.168.1.5')), 'wrong_password');
+  app.users.changeOwnSecret(id, { current: '432100', pin: '555555' }, '192.168.1.5');
+  assert.ok(app.users.login({ user_id: id, pin: '555555', ip: '127.0.0.1' }).token);
   // the lock screen uses the same rules
   assert.equal(app.users.verifyUserSecret(id, '0000', '192.168.1.5'), false);
-  assert.equal(app.users.verifyUserSecret(id, '5555', '192.168.1.5'), true);
+  assert.equal(app.users.verifyUserSecret(id, '555555', '192.168.1.5'), true);
   // an unknown address is not "this computer": no password-free sign-in
   const owner = app.users.list().find((u) => u.username === 'owner');
   app.db.run('UPDATE users SET pin_hash = NULL, password_hash = NULL WHERE id = ?', [owner.id]);

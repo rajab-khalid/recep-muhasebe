@@ -35,7 +35,7 @@ try {
     d.exec('PRAGMA secure_delete = ON');
     d.exec('BEGIN');
     d.exec('DELETE FROM sessions; DELETE FROM login_failures; DELETE FROM phone_ops; DELETE FROM phone_devices;');
-    d.prepare('UPDATE users SET password_hash = NULL, pin_hash = NULL WHERE id <> ?').run(userId);
+    d.prepare('UPDATE users SET password_hash = NULL, pin_hash = NULL, pin_len = NULL WHERE id <> ?').run(userId);
     d.prepare('UPDATE users SET failed_logins = 0, locked_until = NULL').run();
     d.prepare('DELETE FROM files WHERE id <> ?').run(logoId || '');
     d.prepare('DELETE FROM audit_log WHERE ts < ?').run(auditFrom);
@@ -87,11 +87,17 @@ module.exports = function phoneSync(app, router) {
     });
   }
 
-  /** the phone asking must be this user's, known here and not removed */
-  function deviceFor(id, user) {
+  /**
+   * The phone asking must be this user's, known here and not removed. A removed phone (e.g. lost) that still
+   * shows up with a session is signed out on the spot: that session may be older than its link to the phone.
+   */
+  function deviceFor(id, user, ctx) {
     const d = device(id);
     U.assert(d, 'device_unknown', 'This phone is not set up for offline work', 404);
-    U.assert(!d.revoked, 'device_revoked', 'This phone was removed from offline work on the shop computer', 403);
+    if (d.revoked) {
+      if (ctx && ctx.token) app.users.endSessions({ token: ctx.token });
+      throw new U.AppError('device_revoked', 'This phone was removed from offline work on the shop computer', 403);
+    }
     U.assert(d.user_id === user.id, 'device_other_user', 'The offline copy on this phone belongs to another user', 403);
     return d;
   }
@@ -102,12 +108,23 @@ module.exports = function phoneSync(app, router) {
       FROM phone_devices d LEFT JOIN users u ON u.id = d.user_id ORDER BY d.revoked, d.code`);
   }
 
+  /** a removed phone (e.g. lost) is signed out too, unless it is the very screen removing it */
   function revoke(id, ctx) {
     const d = device(id);
     U.assert(d, 'not_found', 'Not found', 404);
     db.update('phone_devices', d.id, { revoked: 1 });
+    const ended = app.users.endSessions({ deviceId: d.id, except: ctx && ctx.token });
     app.audit(ctx, 'phone_copy_removed', 'system', null, { k: 'phone_copy_removed', v: { code: d.code, name: d.name || '' } });
-    return { ok: true };
+    return { ok: true, signed_out: ended };
+  }
+
+  /**
+   * The session asking belongs to this phone: removing the phone signs it out. Phones that were signed in
+   * before 3.2.1 are matched this way at their next check-in.
+   */
+  function linkSession(ctx, deviceId) {
+    if (!ctx || !ctx.token || !deviceId) return;
+    db.run('UPDATE sessions SET device_id = ? WHERE token = ? AND (device_id IS NULL OR device_id <> ?)', [deviceId, ctx.token, deviceId]);
   }
 
   /* ------------------------------------------------------------------ snapshot */
@@ -272,7 +289,8 @@ module.exports = function phoneSync(app, router) {
   }
 
   function sync(body, ctx) {
-    const dev = deviceFor(body.device_id, ctx.user);
+    const dev = deviceFor(body.device_id, ctx.user, ctx);
+    linkSession(ctx, dev.id);
     const list = Array.isArray(body.ops) ? body.ops : [];
     U.assert(list.length <= MAX_OPS, 'too_many_ops', 'Too much offline work at once');
     const results = list.map((op) => applyOp(op, ctx, dev));
@@ -327,6 +345,12 @@ module.exports = function phoneSync(app, router) {
    * Returns { result, duplicate } (or a Promise of it for an asynchronous handler).
    */
   function onlineWrite(opId, deviceId, ctx, run, { atomic = false } = {}) {
+    // a removed phone does no more work here, and is signed out (see deviceFor)
+    const named = device(deviceId);
+    if (named && named.revoked) {
+      if (ctx.token) app.users.endSessions({ token: ctx.token });
+      throw new U.AppError('device_revoked', 'This phone was removed from offline work on the shop computer', 403);
+    }
     const prev = db.get('SELECT status, result FROM phone_ops WHERE id = ?', [opId]);
     if (prev && prev.status === 'applied') return { duplicate: true, result: U.parseJson(prev.result, { ok: true }) };
     const keep = (r) => {
@@ -369,5 +393,5 @@ module.exports = function phoneSync(app, router) {
     db.run("UPDATE phone_ops SET result = NULL WHERE result IS NOT NULL AND created_at < ?", [ago(3)]);
   }
 
-  return { isOwner, device, register, deviceFor, devices, revoke, snapshot, applyOp, sync, problems, retry, dismiss, onlineWrite, prune, ID_RE };
+  return { isOwner, device, register, deviceFor, devices, revoke, linkSession, snapshot, applyOp, sync, problems, retry, dismiss, onlineWrite, prune, ID_RE };
 };

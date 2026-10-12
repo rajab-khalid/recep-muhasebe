@@ -74,6 +74,8 @@ async function request(method, path, body, query) {
   // copy and sent later), the shop computer recognises it and never applies it twice
   const cfg = method !== 'GET' && keeps && !/^\/api\/(auth|phone|setup)\//.test(path) ? offlineConfig() : null;
   const opId = cfg ? newOpId() : null;
+  // a phone that keeps a copy names itself when signing in: removing it on the shop computer signs it out
+  const device = method === 'POST' && path === '/api/auth/login' ? (offlineConfig() || {}).deviceId || null : null;
   /*
    * A switched-off shop computer may not answer at all (the request would hang for a minute). For a read, a
    * phone with a copy checks after a while whether the computer still answers: a slow answer is waited for;
@@ -98,7 +100,7 @@ async function request(method, path, body, query) {
   }
   const send = () => fetch(path + qs(query), {
     method,
-    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'recep', ...(opId ? { 'X-Op-Id': opId, 'X-Device-Id': cfg.deviceId } : {}) },
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'recep', ...(opId ? { 'X-Op-Id': opId, 'X-Device-Id': cfg.deviceId } : {}), ...(device ? { 'X-Device-Id': device } : {}) },
     body: body !== undefined ? JSON.stringify(body) : undefined,
     credentials: 'same-origin',
     signal: ctl ? ctl.signal : undefined,

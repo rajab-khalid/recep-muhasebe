@@ -175,7 +175,12 @@ export function OfflineDevices() {
   if (!data) return html`<${Panel} title=${t('offline.devices')} icon="wifi-off"><${Loading} /></${Panel}>`;
   const remove = async (d) => {
     if (!(await confirmDialog({ title: t('offline.device_remove'), text: t('offline.device_remove_text', { code: d.code }), okText: t('offline.device_remove'), danger: true }))) return;
-    try { await api.post(`/api/phone/devices/${d.id}/revoke`); toast(t('offline.device_removed')); load(); } catch (e) { errToast(e); }
+    try {
+      const r = await api.post(`/api/phone/devices/${d.id}/revoke`);
+      // signed out at once, or (a session older than its link to the phone) at the phone's next contact
+      toast(t(r && r.signed_out ? 'offline.device_removed' : 'offline.device_removed_later'), 'ok', r && r.signed_out ? 3000 : 9000);
+      load();
+    } catch (e) { errToast(e); }
   };
   const active = data.devices.filter((d) => !d.revoked);
   return html`<div class="stack">

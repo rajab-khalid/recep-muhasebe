@@ -107,13 +107,20 @@ test('the copy for the phone leaves out sessions, other users\' PINs and product
     t.s.app.files.saveDataUrl(png, 'photo');
     const mods = await loadModules();
     const p = await takeCopy(t, mods, crypto.randomUUID());
-    const users = p.raw.raw.prepare('SELECT full_name, pin_hash, password_hash FROM users').all();
+    const users = p.raw.raw.prepare('SELECT full_name, pin_hash, password_hash, pin_len FROM users').all();
     assert.equal(users.length, 2);
     assert.ok(users.find((u) => u.full_name === 'Rajab').pin_hash, 'the owner can sign in on the phone');
     assert.equal(users.find((u) => u.full_name === 'Kasiyer').pin_hash, null, 'other users\' PINs never leave the computer');
+    assert.equal(users.find((u) => u.full_name === 'Kasiyer').pin_len, null, 'nor their length');
     assert.equal(p.raw.raw.prepare('SELECT COUNT(*) AS n FROM sessions').get().n, 0);
     assert.deepEqual(p.raw.raw.prepare('SELECT id FROM files').all().map((r) => r.id), [logo], 'only the logo is copied');
     assert.equal(p.raw.raw.prepare("SELECT COUNT(*) AS n FROM phone_devices").get().n, 0);
+    // the owner signs in on the copy with the 4-digit PIN (the 6-digit rule is for the network only); who is
+    // signed in to the shop computer is not something the copy can tell
+    const tok = await phoneLogin(p.core, t.owner.id);
+    const sess = await p.core.request({ method: 'GET', path: '/api/auth/sessions', token: tok });
+    assert.equal(sess.status, 409);
+    assert.equal(sess.error.code, 'needs_online');
     // only the owner, and only a registered phone
     const other = await call(t.s.port, { pathName: `/api/phone/snapshot?device=${crypto.randomUUID()}`, cookie: t.cookie, raw: true });
     assert.equal(other.status, 404);

@@ -55,10 +55,12 @@ const LOCAL = [
   ['POST', '/api/products/for-sale'], // a read sent as POST (a list of product ids with prices for a customer)
 ];
 
-/* reads that only make sense with the shop computer (they reach the internet or the computer's own files) */
+/* reads that only make sense with the shop computer (they reach the internet, the computer's own files, or
+   who is signed in to it) */
 const ONLINE_READS = [
   ['GET', '/api/rates/online'],
   ['GET', '/api/backup/download/:name'],
+  ['GET', '/api/auth/sessions'],
 ];
 
 const key = (method, pattern) => `${method} ${pattern}`;

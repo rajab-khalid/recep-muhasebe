@@ -29,7 +29,7 @@ export function Users() {
       columns=${[
         { key: 'name', label: t('user.full_name'), render: (u) => html`<div class="row gap-8"><div class="avatar" style="background:var(--graphite)">${(u.full_name || '?').slice(0, 2).toUpperCase()}</div><div><div class="cell-name">${u.full_name}${me && me.id === u.id ? html` <${Pill} kind="info">${t('user.you')}</${Pill}>` : null}</div><div class="sub">${u.username || ''}</div></div></div>` },
         { key: 'role', label: t('user.role'), render: (u) => dn(u.role_name) || '—' },
-        { key: 'login', label: t('user.login'), render: (u) => (!u.can_login ? html`<${Pill}>${t('user.no_login')}</${Pill}>` : html`<div class="row gap-4">${u.has_password && html`<${Pill}>${t('user.has_password')}</${Pill}>`}${u.has_pin && html`<${Pill}>PIN</${Pill}>`}${!u.has_password && !u.has_pin && html`<${Pill} kind="warn">${t('user.no_secret')}</${Pill}>`}</div>`) },
+        { key: 'login', label: t('user.login'), render: (u) => (!u.can_login ? html`<${Pill}>${t('user.no_login')}</${Pill}>` : html`<div class="row gap-4">${u.has_password && html`<${Pill}>${t('user.has_password')}</${Pill}>`}${u.has_pin && (u.pin_len && u.pin_len < 6 ? html`<${Pill} kind="warn" title=${t('user.pin_short_title')}>${t('user.pin_short')}</${Pill}>` : html`<${Pill}>PIN</${Pill}>`)}${!u.has_password && !u.has_pin && html`<${Pill} kind="warn">${t('user.no_secret')}</${Pill}>`}</div>`) },
         { key: 'disc', label: t('user.max_discount'), align: 'r', render: (u) => (u.permissions.includes('*') || u.permissions.includes('sales.discount') ? html`<span class="muted small">${t('user.unlimited')}</span>` : u.max_discount_pct != null ? fpct(u.max_discount_pct) : html`<span class="muted small">${t('common.default')}</span>`) },
         { key: 'comm', label: t('user.commission'), align: 'r', render: (u) => (u.commission_sales_pct || u.commission_labor_pct ? html`<span class="small">${fpct(u.commission_sales_pct || 0)} / ${fpct(u.commission_labor_pct || 0)}</span>` : '') },
         { key: 'last', label: t('user.last_login'), render: (u) => html`<span class="small muted">${u.last_login_at ? dateTime(u.last_login_at) : '—'}</span>` },
@@ -75,6 +75,9 @@ function UserDialog({ user, roles, close }) {
         <${Field} label=${u.has_password ? t('user.new_password') : t('login.password')} hint=${u.has_password ? t('user.keep_empty') : null}><${Input} type="password" value=${f.password} onValue=${(v) => set({ password: v })} autocomplete="new-password" /></${Field}>
         <${Field} label=${u.has_pin ? t('user.new_pin') : 'PIN'} hint=${t('user.pin_hint')}><${Input} type="password" inputmode="numeric" maxlength="8" value=${f.pin} onValue=${(v) => set({ pin: v.replace(/\D/g, '') })} autocomplete="new-password" /></${Field}>
       </div>
+      ${f.pin.length >= 4 && f.pin.length < 6 ? html`<div class="small warn-text">${t('user.pin_pc_only')}</div>`
+        : !f.pin && u.has_pin && u.pin_len && u.pin_len < 6 ? html`<${Notice} kind="warn">${t('user.pin_short_note', { n: u.pin_len })}</${Notice}>` : null}
+      ${u.id && (f.pin || f.password || f.clear_pin) && html`<p class="small muted" style="margin:0">${t('user.secret_signs_out')}</p>`}
       ${u.has_pin && html`<${Check} checked=${f.clear_pin} onValue=${(v) => set({ clear_pin: v })} label=${t('user.clear_pin')} />`}
       <div class="form-3">
         <${Field} label=${t('user.max_discount')} hint=${t('user.max_discount_hint')}><${NumInput} value=${f.max_discount_pct} onValue=${(v) => set({ max_discount_pct: v })} dec=${2} placeholder=${t('common.default')} /></${Field}>
