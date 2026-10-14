@@ -182,16 +182,122 @@ test('an older database: its single extra costs become cost rows, spread by valu
   raw.exec(`INSERT INTO docs (id, type, no, date, status, currency, rate, usd_iqd, extra_cost, extra_account_id, created_at)
     VALUES ('d1', 'purchase', 'AF1', '2026-10-01', 'posted', 'IQD', 1500, 1500, 9000, 'acc-1', '2026-10-01T10:00:00Z'),
            ('d2', 'purchase', 'AF2', '2026-10-01', 'posted', 'USD', 1, 1500, 0, NULL, '2026-10-01T10:00:00Z'),
-           ('d3', 'sale', 'SF1', '2026-10-01', 'posted', 'IQD', 1500, 1500, 0, NULL, '2026-10-01T10:00:00Z')`);
+           ('d3', 'sale', 'SF1', '2026-10-01', 'posted', 'IQD', 1500, 1500, 0, NULL, '2026-10-01T10:00:00Z'),
+           ('d4', 'purchase', 'AF3', '2026-10-01', 'posted', 'IQD', 1500, 1500, -3000, NULL, '2026-10-01T10:00:00Z')`);
   raw.close();
   const app = createApp({ dataDir: dir });
-  const rows = app.db.all('SELECT * FROM doc_costs');
-  assert.equal(rows.length, 1);
+  const rows = app.db.all('SELECT * FROM doc_costs ORDER BY doc_id');
+  assert.equal(rows.length, 2);
+  assert.deepEqual([rows[1].doc_id, rows[1].amount], ['d4', -3000], 'a negative extra cost too');
   assert.equal(rows[0].doc_id, 'd1');
   assert.equal(rows[0].amount, 9000);
   assert.equal(rows[0].currency, 'IQD');
   assert.equal(rows[0].account_id, 'acc-1');
   assert.equal(rows[0].kind, 'other');
   assert.match(rows[0].id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-  assert.deepEqual(app.db.all('SELECT id, cost_split FROM docs ORDER BY id').map((d) => [d.id, d.cost_split]), [['d1', 'value'], ['d2', null], ['d3', null]]);
+  assert.deepEqual(app.db.all('SELECT id, cost_split FROM docs ORDER BY id').map((d) => [d.id, d.cost_split]), [['d1', 'value'], ['d2', null], ['d3', null], ['d4', 'value']]);
+});
+
+test('a cost paid from a box of another currency is kept in that currency: the box does not move with the rate', () => {
+  const t = shop('fxbox');
+  const { app, ctx } = t;
+  const cashUsd = app.cash.defaultAccount('USD');
+  const r = t.buy({ cost_split: 'qty', costs: [{ kind: 'customs', amount: 24000, currency: 'IQD', account_id: cashUsd.id }] });
+  assert.deepEqual(costsOf(app, r.id).map((c) => [c.currency, c.amount]), [['USD', 16]]);
+  assert.equal(app.cash.balance(cashUsd.id), -16);
+  // the invoice's rate is changed later: still $16 out of the box, and the goods carry $16
+  const d = app.docs.get(r.id);
+  app.docs.save({ ...d, id: r.id, lines: d.lines, usd_iqd: 1480, costs: d.costs, post: true }, ctx);
+  assert.equal(app.cash.balance(cashUsd.id), -16);
+  near(lineOf(app, r.id, t.cloth).extra_usd, 16 * 10 / 12, 1e-6);
+  assert.equal(app.docs.get(r.id).extra_cost, 16 * 1480);
+});
+
+test('products kept in stock carry the costs; products without stock tracking only when nothing else is there', () => {
+  const t = shop('untracked');
+  const { app, ctx } = t;
+  const loose = app.products.save({ name: 'Dökme şampuan', currency: 'IQD', track_stock: 0 }, ctx);
+  const r = app.docs.save({
+    type: 'purchase', partner_id: t.supplier, currency: 'IQD', usd_iqd: 1500, post: true, cost_split: 'qty',
+    lines: [{ product_id: t.cloth, qty: 10, unit_price: 3000 }, { product_id: loose, qty: 10, unit_price: 3000 }],
+    costs: [{ kind: 'freight', amount: 30000, currency: 'IQD', account_id: t.cashIqd.id }],
+  }, ctx);
+  near(lineOf(app, r.id, t.cloth).unit_cost_usd, 6000 / 1500, 1e-6, 'all of it on the stock item');
+  assert.equal(lineOf(app, r.id, loose).extra_usd, 0);
+  const r2 = app.docs.save({
+    type: 'purchase', partner_id: t.supplier, currency: 'IQD', usd_iqd: 1500, post: true, cost_split: 'qty',
+    lines: [{ product_id: loose, qty: 5, unit_price: 3000 }], costs: [{ kind: 'freight', amount: 5000, currency: 'IQD' }],
+  }, ctx);
+  near(lineOf(app, r2.id, loose).extra_usd, 5000 / 1500, 1e-6, 'shown on the only goods there are');
+});
+
+test('an older invoice keeps what its version allowed: a negative extra cost, costs on an invoice without goods', () => {
+  const t = shop('older');
+  const { app, ctx } = t;
+  // as the update leaves an invoice with a negative extra cost: it lowered the goods' cost and touched no account
+  const r = t.buy({});
+  app.db.run("INSERT INTO doc_costs (id, doc_id, sort, kind, currency, amount, created_at) VALUES ('c-neg', ?, 0, 'other', 'IQD', -11000, '2026-10-01T10:00:00Z')", [r.id]);
+  app.db.run("UPDATE docs SET extra_cost = -11000, cost_split = 'value' WHERE id = ?", [r.id]);
+  let d = app.docs.get(r.id);
+  app.docs.save({ ...d, id: r.id, lines: d.lines, costs: d.costs, post: true }, ctx); // saved again from the new screen
+  near(lineOf(app, r.id, t.cloth).unit_cost_usd, 900 / 1500, 1e-6, '10% off, as before');
+  assert.deepEqual(extraMoves(app, r.id), { cash: [], partners: [] });
+  assert.equal(app.docs.get(r.id).extra_cost, -11000);
+  d = app.docs.get(r.id);
+  app.docs.save({ ...d, id: r.id, lines: d.lines, costs: undefined, extra_cost: -11000, post: true }, ctx); // and from an older one
+  near(lineOf(app, r.id, t.cloth).unit_cost_usd, 900 / 1500, 1e-6);
+  d = app.docs.get(r.id);
+  assert.equal(code(() => app.docs.save({ ...d, id: r.id, lines: d.lines, costs: [...d.costs, { kind: 'other', amount: -500, currency: 'IQD' }], post: true }, ctx)), 'bad_cost', 'a new negative cost is refused');
+  // an invoice of services only, with a cost paid from the cash box
+  const s = app.docs.save({ type: 'purchase', partner_id: t.supplier, currency: 'IQD', usd_iqd: 1500, post: true, lines: [{ kind: 'labor', description: 'Montaj', qty: 1, unit_price: 5000 }] }, ctx);
+  app.db.run("INSERT INTO doc_costs (id, doc_id, sort, kind, currency, amount, account_id, created_at) VALUES ('c-svc', ?, 0, 'other', 'IQD', 2000, ?, '2026-10-01T10:00:00Z')", [s.id, t.cashIqd.id]);
+  app.db.run("UPDATE docs SET extra_cost = 2000, cost_split = 'value' WHERE id = ?", [s.id]);
+  const sd = app.docs.get(s.id);
+  app.docs.save({ ...sd, id: s.id, lines: sd.lines, costs: sd.costs, post: true }, ctx);
+  assert.equal(app.cash.balance(t.cashIqd.id), -2000, 'still paid from the box');
+  const sd2 = app.docs.get(s.id);
+  assert.equal(code(() => app.docs.save({ ...sd2, id: s.id, lines: sd2.lines, costs: [...sd2.costs, { kind: 'freight', amount: 100, currency: 'IQD' }], post: true }, ctx)), 'costs_need_goods');
+});
+
+test('an older screen cannot change costs entered with this version, and does not lose them', () => {
+  const t = shop('oldscreen');
+  const { app, ctx } = t;
+  const r = t.buy({ cost_split: 'qty', costs: [{ kind: 'customs', amount: 3000, currency: 'IQD', account_id: t.cashIqd.id }, { kind: 'freight', amount: 2, currency: 'USD', partner_id: t.carrier }] });
+  const d = app.docs.get(r.id);
+  assert.equal(code(() => app.docs.save({ ...d, id: r.id, lines: d.lines, costs: undefined, extra_cost: 1000, extra_account_id: null, post: true }, ctx)), 'costs_need_update');
+  // the invoice moved to dollars there (that screen converts its total itself): the costs stay, each in its currency
+  app.docs.save({ ...d, id: r.id, currency: 'USD', lines: d.lines.map((l) => ({ ...l, unit_price: l.unit_price / 1500 })), costs: undefined, extra_cost: 4, extra_account_id: null, post: true }, ctx);
+  assert.deepEqual(costsOf(app, r.id).map((c) => [c.kind, c.currency, c.amount]), [['customs', 'IQD', 3000], ['freight', 'USD', 2]]);
+  assert.deepEqual(app.partners.balances(t.carrier), { USD: -2 });
+  assert.equal(app.cash.balance(t.cashIqd.id), -3000);
+  // an invoice without costs saved there is not marked "by price"
+  const plain = t.buy({});
+  const pd = app.docs.get(plain.id);
+  app.docs.save({ ...pd, id: plain.id, lines: pd.lines, costs: undefined, extra_cost: 0, post: true }, ctx);
+  assert.equal(app.docs.get(plain.id).cost_split, null);
+});
+
+test('costs go only to open accounts; an account named on costs is closed, not deleted; the history keeps the costs', () => {
+  const t = shop('refs');
+  const { app, ctx } = t;
+  assert.equal(code(() => t.buy({ costs: [{ kind: 'freight', amount: 5, currency: 'IQD', partner_id: app.partners.walkinId() }] })), 'bad_cost_partner');
+  const gone = app.partners.save({ kind: 'supplier', name: 'Eski Nakliyeci' }, ctx);
+  app.db.run('UPDATE partners SET active = 0 WHERE id = ?', [gone]);
+  assert.equal(code(() => t.buy({ costs: [{ kind: 'freight', amount: 5, currency: 'IQD', partner_id: gone }] })), 'bad_cost_partner');
+  const closed = app.cash.accountSave({ type: 'cash', name: 'Eski kasa', currency: 'IQD', active: false }, ctx);
+  assert.equal(code(() => t.buy({ costs: [{ kind: 'customs', amount: 5, currency: 'IQD', account_id: closed }] })), 'account_inactive');
+  // a draft names the carrier and a new box: neither can be deleted any more, only closed
+  const box = app.cash.accountSave({ type: 'cash', name: 'Gümrük kasası', currency: 'IQD' }, ctx);
+  const r = t.buy({ post: false, costs: [{ kind: 'freight', amount: 5, currency: 'IQD', partner_id: t.carrier }, { kind: 'customs', amount: 7, currency: 'IQD', account_id: box }] });
+  assert.deepEqual(app.partners.remove(t.carrier, ctx), { deactivated: true });
+  assert.deepEqual(app.cash.accountRemove(box, ctx), { deactivated: true });
+  // the history of an edit and of a deleted draft says what the costs were
+  const d = app.docs.get(r.id);
+  app.docs.save({ ...d, id: r.id, lines: d.lines, costs: [], post: false }, ctx);
+  const edit = JSON.parse(app.db.val("SELECT data FROM audit_log WHERE entity = 'doc' AND entity_id = ? AND action = 'update' ORDER BY ts DESC LIMIT 1", [r.id]));
+  assert.deepEqual(edit.before.costs.map((c) => [c.k, c.a, c.p || c.acc]), [['freight', 5, t.carrier], ['customs', 7, box]]);
+  const r2 = t.buy({ post: false, costs: [{ kind: 'other', amount: 9, currency: 'IQD' }] });
+  app.docs.removeDraft(r2.id, ctx);
+  const del = JSON.parse(app.db.val("SELECT data FROM audit_log WHERE entity_id = ? AND action = 'delete_draft'", [r2.id]));
+  assert.deepEqual(del.costs.map((c) => [c.k, c.a]), [['other', 9]]);
 });

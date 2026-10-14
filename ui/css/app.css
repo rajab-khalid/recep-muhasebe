@@ -508,7 +508,7 @@ html[dir="rtl"] .lines-tbl tr.kind-labor td:first-child { box-shadow: inset -3px
 .timeline .ev i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); margin-top: 6px; }
 /* a purchase's costs (customs, freight, other): one row per cost, how they are spread, what each unit ends up costing */
 .cost-rows { display: flex; flex-direction: column; gap: 8px; }
-.cost-row { display: grid; grid-template-columns: 150px minmax(0, 1.4fr) 130px 86px minmax(0, 1fr) 32px; gap: 6px 8px; align-items: center; }
+.cost-row { display: grid; grid-template-columns: 124px minmax(0, 1.3fr) 112px 80px minmax(150px, 1fr) 32px; gap: 6px 8px; align-items: center; }
 .cost-row > div { min-width: 0; }
 .cost-row .select, .cost-row .input { width: 100%; }
 .cost-row .cr-partner { grid-column: 2 / -2; }

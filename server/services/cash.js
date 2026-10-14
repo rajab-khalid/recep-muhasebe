@@ -72,7 +72,8 @@ module.exports = (app) => {
 
   function accountRemove(id, ctx) {
     const a = account(id);
-    const used = db.val('SELECT COUNT(*) FROM money_moves WHERE account_id = ?', [id]);
+    // also the account a purchase's cost is paid from (a draft has no money moves yet)
+    const used = db.val('SELECT COUNT(*) FROM money_moves WHERE account_id = ?', [id]) + db.val('SELECT COUNT(*) FROM doc_costs WHERE account_id = ?', [id]);
     if (used || a.opening_balance) {
       U.assert(Math.abs(balance(id)) < 0.005, 'account_not_empty', 'The account balance must be zero before closing it');
       db.update('money_accounts', id, { active: 0 });

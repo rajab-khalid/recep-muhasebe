@@ -345,7 +345,8 @@ const MIGRATIONS = [
   // ---------------------------------------------------------------- v7: a purchase's costs (customs, freight, other) one by one, each paid
   // from a cash/bank account or owed to the supplier or another account; spread over the goods per unit or by
   // value (cost_split). docs.extra_cost stays as their total in the invoice currency. The single extra cost of
-  // older purchases becomes one "other" cost, spread by value as before.
+  // older purchases becomes one "other" cost, spread by value as before (a negative one too: it lowered the goods'
+  // cost without touching any account, and still does).
   `
   CREATE TABLE doc_costs (
     id TEXT PRIMARY KEY, doc_id TEXT NOT NULL REFERENCES docs(id), sort INTEGER NOT NULL DEFAULT 0,
@@ -358,8 +359,8 @@ const MIGRATIONS = [
     SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-'
         || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))),
       id, 0, 'other', NULL, currency, extra_cost, extra_account_id, NULL, created_at
-    FROM docs WHERE type = 'purchase' AND extra_cost > 0;
-  UPDATE docs SET cost_split = 'value' WHERE type = 'purchase' AND extra_cost > 0;
+    FROM docs WHERE type = 'purchase' AND extra_cost <> 0;
+  UPDATE docs SET cost_split = 'value' WHERE type = 'purchase' AND extra_cost <> 0;
   `,
 ];
 

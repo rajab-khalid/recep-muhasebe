@@ -260,7 +260,9 @@ module.exports = (app) => {
     const p = db.get('SELECT * FROM partners WHERE id = ?', [id]);
     U.assert(p, 'not_found', 'Account not found', 404);
     U.assert(!p.is_walkin, 'walkin_locked', 'The walk-in customer cannot be removed');
-    const used = db.val('SELECT COUNT(*) FROM partner_moves WHERE partner_id = ?', [id]) + db.val('SELECT COUNT(*) FROM docs WHERE partner_id = ?', [id]);
+    // also a carrier or customs agent named on a purchase's costs (a draft has no account lines yet)
+    const used = db.val('SELECT COUNT(*) FROM partner_moves WHERE partner_id = ?', [id]) + db.val('SELECT COUNT(*) FROM docs WHERE partner_id = ?', [id])
+      + db.val('SELECT COUNT(*) FROM doc_costs WHERE partner_id = ?', [id]);
     return db.tx(() => {
       if (used) {
         db.update('partners', id, { active: 0, updated_at: U.nowIso() });
