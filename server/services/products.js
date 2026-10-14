@@ -189,7 +189,7 @@ module.exports = (app) => {
       WHERE f.product_id = ? ORDER BY mk.name, md.name, f.year_from`, [id]);
     p.levels = app.stock.levels(id);
     p.stock = p.levels.reduce((s, l) => s + l.qty, 0);
-    p.recent_purchases = db.all(`SELECT d.id, d.no, d.date, d.currency, l.qty, l.unit_price, l.unit_cost_usd, pa.name AS partner_name
+    p.recent_purchases = db.all(`SELECT d.id, d.no, d.date, d.currency, d.usd_iqd, l.qty, l.unit_price, l.line_total, l.unit_cost_usd, l.extra_usd, pa.name AS partner_name
       FROM doc_lines l JOIN docs d ON d.id = l.doc_id LEFT JOIN partners pa ON pa.id = d.partner_id
       WHERE l.product_id = ? AND d.type = 'purchase' AND d.status = 'posted' ORDER BY d.date DESC, d.created_at DESC LIMIT 10`, [id]);
     p.recent_sales = db.all(`SELECT d.id, d.no, d.date, d.currency, l.qty, l.unit_price, l.discount, l.line_total, l.unit_cost_usd, d.rate,

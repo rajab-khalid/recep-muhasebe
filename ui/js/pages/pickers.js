@@ -19,7 +19,7 @@ export function PartnerPicker({ value, onChange, kind, placeholder, autoFocus, a
       <${Icon} name=${value.is_walkin ? 'user' : value.kind === 'supplier' ? 'building-2' : 'users'} />
       <div class="grow" style="min-width:0">
         <div class="ellipsis strong" dir="auto">${dn(value.name)}</div>
-        <div class="tiny muted ellipsis">${[value.phone, value.city].filter(Boolean).join(' · ')}</div>
+        <div class="tiny muted ellipsis">${value.phone && html`<span class="ltr">${value.phone}</span>`}${value.phone && value.city ? ' · ' : ''}${value.city || ''}</div>
       </div>
       ${showBalance && value.balances && html`<${Balances} value=${value.balances} emptyText=" " />`}
       ${!disabled && html`<${IconBtn} icon="pencil" title=${t('common.change')} onClick=${() => setEditing(true)} />`}

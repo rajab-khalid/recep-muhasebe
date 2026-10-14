@@ -191,6 +191,10 @@ export function ProductPage({ id, query = {} }) {
   const costCur = p.currency;
   const avgInCur = p.avg_cost_usd ? convert(p.avg_cost_usd, 'USD', costCur) : null;
   const costBase = avgInCur || p.cost_price || null;
+  // the last purchase with customs, freight...: what one unit cost with its share of them (at that invoice's rate)
+  const lp = (p.recent_purchases || [])[0];
+  const lastLanded = lp && lp.extra_usd > 0 && lp.qty > 0 && lp.unit_cost_usd != null
+    ? { value: convert(lp.unit_cost_usd, 'USD', costCur, lp.usd_iqd), extra: convert(lp.extra_usd / lp.qty, 'USD', costCur, lp.usd_iqd) } : null;
 
   const save = async () => {
     if (!p.name.trim()) { toast(t('product.name_required'), 'err'); return; }
@@ -305,6 +309,7 @@ export function ProductPage({ id, query = {} }) {
               <${NumInput} value=${p.price_rate ?? null} onValue=${(v) => set({ price_rate: v })} dec=${0} disabled=${!canPrices} placeholder=${t('product.price_rate_ph', { rate: num(usdIqd(), 0) })} /></${Field}>`}
             ${(showCost || canPrices) && html`<${Field} label=${t('product.cost_price')} hint=${t('product.cost_price_hint')}><div class="input-wrap"><${NumInput} value=${p.cost_price} onValue=${(v) => set({ cost_price: v })} dec=${Math.max(decimals(costCur), 2)} disabled=${!canPrices} cls="has-suffix" /><span class="suffix">${costCur}</span></div></${Field}>`}
             ${showCost && p.avg_cost_usd > 0 && html`<${Field} label=${t('product.avg_cost')} hint=${t('product.avg_cost_hint')}><div class="input" style="display:flex;align-items:center;background:var(--surface-2)"><span class="num">${money(p.avg_cost_usd, 'USD')}</span><span class="muted small" style="margin-inline-start:8px">≈ ${money(avgInCur, costCur)}</span></div></${Field}>`}
+            ${showCost && lastLanded && html`<${Field} label=${t('product.last_landed')} hint=${t('product.last_landed_hint')}><div class="input" style="display:flex;align-items:center;background:var(--surface-2)"><span class="num nowrap">${money(lastLanded.value, costCur)}</span><span class="muted small num ellipsis" style="margin-inline-start:8px;min-width:0" title=${t('product.landed_share', { amount: money(lastLanded.extra, costCur) })}>${t('product.landed_share', { amount: money(lastLanded.extra, costCur) })}</span></div></${Field}>`}
           </div>
           <table class="tbl compact mt-16"><thead><tr><th>${t('doc.price_list')}</th><th class="r" style="width:200px">${t('print.col.price')} (${costCur})</th>${showCost && html`<th class="r">${t('product.margin')}</th>`}<th class="r">${costCur === 'USD' ? 'IQD' : 'USD'}${p.price_rate > 0 && ['USD', 'IQD'].includes(costCur) ? html`<div class="tiny muted" style="font-weight:400">${t('product.at_rate', { rate: num(p.price_rate, 0) })}</div>` : null}</th></tr></thead>
             <tbody>${(boot().price_lists || []).filter((pl) => pl.active).map((pl) => {
@@ -377,7 +382,7 @@ export function ProductPage({ id, query = {} }) {
         </${Panel}>` : null}
         ${p.recent_purchases && p.recent_purchases.length > 0 && html`<${Panel} title=${t('product.recent_purchases')} icon="truck" body=${false}><div class="mini-list">
           ${p.recent_purchases.map((r) => html`<div class="mini-row link" onClick=${() => navigate(`/doc/${r.id}`)}><div class="grow"><div class="small" dir="auto">${r.partner_name}</div><div class="tiny muted">${r.no} · ${fdate(r.date)} · ${fqty(r.qty)} ${p.unit || ''}</div></div>
-            <div style="text-align:end"><${Money} value=${r.unit_price} cur=${r.currency} strong />${r.unit_cost_usd != null && showCost ? html`<div class="tiny muted num">${t('product.landed')}: ${money(r.unit_cost_usd, 'USD')}</div>` : null}</div></div>`)}
+            <div style="text-align:end"><${Money} value=${r.unit_price} cur=${r.currency} strong />${r.unit_cost_usd != null && showCost ? html`<div class="tiny muted num">${t(r.extra_usd > 0 ? 'product.landed_with_costs' : 'product.landed')}: ${money(r.unit_cost_usd, 'USD')}</div>` : null}</div></div>`)}
         </div></${Panel}>`}
         ${p.recent_sales && p.recent_sales.length > 0 && html`<${Panel} title=${t('product.recent_sales')} icon="receipt" body=${false}><div class="mini-list">
           ${p.recent_sales.map((r) => html`<div class="mini-row link" onClick=${() => navigate(`/doc/${r.id}`)}><div class="grow"><div class="small" dir="auto">${r.partner_name}</div><div class="tiny muted">${r.no} · ${fdate(r.date)} · ${fqty(r.qty)} ${p.unit || ''}</div></div>

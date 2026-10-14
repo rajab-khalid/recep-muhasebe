@@ -196,6 +196,40 @@ test('work done on the phone offline reaches the computer with the same ids, num
   } finally { await t.s.close(); }
 });
 
+test('a purchase with customs and freight made on the phone offline reaches the computer with the same costs', async () => {
+  const t = await shop();
+  try {
+    const app = t.s.app;
+    const carrier = app.partners.save({ kind: 'supplier', name: 'Habur Nakliyat' }, { user: t.owner });
+    const supplier = app.db.get("SELECT id FROM partners WHERE name = 'Toptancı'").id;
+    const cash = app.db.get("SELECT id FROM money_accounts WHERE type = 'cash' AND currency = 'IQD'");
+    const mods = await loadModules();
+    const deviceId = crypto.randomUUID();
+    const p = await takeCopy(t, mods, deviceId);
+    const token = await phoneLogin(p.core, t.owner.id);
+    const r = await p.core.request({
+      method: 'POST', path: '/api/docs', token, body: {
+        type: 'purchase', partner_id: supplier, currency: 'IQD', usd_iqd: 1500, post: true, cost_split: 'qty',
+        lines: [{ product_id: t.pid, qty: 5, unit_price: 3000 }],
+        costs: [{ kind: 'customs', amount: 5000, currency: 'IQD', account_id: cash.id }, { kind: 'freight', amount: 2, currency: 'USD', partner_id: carrier }],
+      },
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.error));
+    const onPhone = p.raw.raw.prepare('SELECT id, kind, amount, currency, account_id, partner_id FROM doc_costs WHERE doc_id = ? ORDER BY sort').all(r.data.id).map((x) => ({ ...x }));
+    assert.equal(onPhone.length, 2);
+    const ops = p.core.pending();
+    const sync = await call(t.s.port, { method: 'POST', pathName: '/api/phone/sync', cookie: t.cookie, body: { device_id: deviceId, ops } });
+    assert.deepEqual(sync.json.results.map((x) => x.status), ['applied'], JSON.stringify(sync.json.results));
+    const onPc = app.db.all('SELECT id, kind, amount, currency, account_id, partner_id FROM doc_costs WHERE doc_id = ? ORDER BY sort', [r.data.id]).map((x) => ({ ...x }));
+    assert.deepEqual(onPc, onPhone, 'same cost rows, same ids');
+    // 5.000 IQD + $2 (3.000 IQD) over 5 units: 1.600 IQD on each, paid from the cash box and owed to the carrier
+    const line = app.db.get('SELECT unit_cost_usd FROM doc_lines WHERE doc_id = ?', [r.data.id]);
+    assert.ok(Math.abs(line.unit_cost_usd - (3000 + 1600) / 1500) < 1e-6, String(line.unit_cost_usd));
+    assert.equal(app.db.val("SELECT SUM(amount) FROM money_moves WHERE doc_id = ? AND kind = 'purchase_extra' AND voided = 0", [r.data.id]), -5000);
+    assert.deepEqual(app.partners.balances(carrier), { USD: -2 });
+  } finally { await t.s.close(); }
+});
+
 test('an edit of a record changed on the computer meanwhile is kept as a problem; the owner can apply it anyway', async () => {
   const t = await shop();
   try {

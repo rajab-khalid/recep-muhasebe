@@ -506,6 +506,28 @@ html[dir="rtl"] .lines-tbl tr.kind-labor td:first-child { box-shadow: inset -3px
 .timeline { display: flex; flex-direction: column; gap: 0; }
 .timeline .ev { display: grid; grid-template-columns: 14px 1fr; gap: 10px; padding: 6px 0; font-size: 13px; }
 .timeline .ev i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); margin-top: 6px; }
+/* a purchase's costs (customs, freight, other): one row per cost, how they are spread, what each unit ends up costing */
+.cost-rows { display: flex; flex-direction: column; gap: 8px; }
+.cost-row { display: grid; grid-template-columns: 150px minmax(0, 1.4fr) 130px 86px minmax(0, 1fr) 32px; gap: 6px 8px; align-items: center; }
+.cost-row > div { min-width: 0; }
+.cost-row .select, .cost-row .input { width: 100%; }
+.cost-row .cr-partner { grid-column: 2 / -2; }
+.cost-head { font-size: 12px; color: var(--ink-3); margin-bottom: -4px; }
+.cost-head > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cost-head > .r { text-align: end; }
+.cost-split { padding: 10px 12px; border-radius: var(--radius-lg); background: var(--surface-2); border: 1px solid var(--line); }
+.cost-break { border-top: 1px solid var(--line); }
+.cost-foot { padding-top: 10px; padding-bottom: 12px; border-top: 1px solid var(--line); }
+@media (max-width: 760px) {
+  .cost-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 40px; grid-template-areas: "kind kind x" "desc desc desc" "amt cur cur" "pay pay pay";
+    padding: 10px; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); gap: 8px;
+  }
+  .cost-row .cr-kind { grid-area: kind; } .cost-row .cr-desc { grid-area: desc; } .cost-row .cr-amt { grid-area: amt; }
+  .cost-row .cr-cur { grid-area: cur; } .cost-row .cr-pay { grid-area: pay; } .cost-row .cr-x { grid-area: x; justify-self: end; }
+  .cost-row .cr-partner { grid-column: 1 / -1; }
+  .cost-head { display: none; }
+}
 
 /* ============================================================== login / setup */
 .auth-screen { min-height: 100vh; display: grid; grid-template-columns: minmax(320px, 520px) 1fr; background: var(--paper); }

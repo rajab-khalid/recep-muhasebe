@@ -20,7 +20,7 @@ import { actorName } from './audit.js';
 import { PaymentDialog, PaymentDrawer } from './payments.js';
 import {
   PartnerPicker, ProductSearch, ProductPickerDialog, VehiclePicker, AccountSelect, WarehouseSelect, CurrencySelect, StaffSelect, PriceListSelect,
-  defaultAccount, account, defaultWarehouseId, defaultPriceListId, activeWarehouses, loadPartner,
+  defaultAccount, account, accountOptions, defaultWarehouseId, defaultPriceListId, activeWarehouses, loadPartner,
 } from './pickers.js';
 import { dn } from '../core/names.js';
 
@@ -231,6 +231,9 @@ export function DocView({ id }) {
   const goto = (u) => { const [p, q] = u.split('?'); navigate(p, Object.fromEntries(new URLSearchParams(q || ''))); };
   const sub = d.lines.reduce((s, l) => s + (l.kind === 'text' ? 0 : l.qty * l.unit_price), 0);
   const costCur = showCost ? d.cost_usd * d.rate : null;
+  // a purchase with customs, freight...: each line shows its share of them per unit, before its unit cost
+  const hasCosts = d.type === 'purchase' && d.extra_cost > 0;
+  const showShare = showCost && hasCosts;
 
   return html`<div class="page stack">
     <div class="row wrap gap-8 doc-top">
@@ -257,9 +260,10 @@ export function DocView({ id }) {
     <div class="split wide-side">
       <div class="stack">
         <${Panel} body=${false} title=${t('doc.lines')} icon="list">
-          ${phone ? html`<${LineCards} d=${d} showCost=${showCost} />` : html`<div class="table-wrap"><table class="tbl">
+          ${phone ? html`<${LineCards} d=${d} showCost=${showCost} showShare=${showShare} />` : html`<div class="table-wrap"><table class="tbl">
             <thead><tr><th class="c" style="width:34px">#</th><th>${t('print.col.desc')}</th><th class="r">${t('print.col.qty')}</th><th class="r">${t('print.col.price')}</th>
               <th class="r">${t('print.col.discount')}</th><th class="r">${t('print.col.total')}</th>
+              ${showShare && html`<th class="r" title=${t('doc.cost_unit_share_hint')}>${t('doc.cost_unit_share')}</th>`}
               ${showCost && ['sale', 'sale_return', 'purchase'].includes(d.type) && html`<th class="r">${t('doc.unit_cost')}</th>`}</tr></thead>
             <tbody>${d.lines.map((l, i) => html`<tr class=${l.kind === 'text' ? 'kind-text' : ''}>
               <td class="c muted">${i + 1}</td>
@@ -270,12 +274,14 @@ export function DocView({ id }) {
               <td class="r">${l.kind === 'text' || ['transfer', 'adjust'].includes(d.type) ? '' : html`<${Money} value=${l.unit_price} cur=${cur} />`}</td>
               <td class="r">${l.discount ? html`<span class="num neg small">${l.discount_pct ? fpct(l.discount_pct) : money(l.discount, cur)}</span>` : ''}</td>
               <td class="r">${l.kind === 'text' || ['transfer', 'adjust'].includes(d.type) ? '' : html`<${Money} value=${l.line_total} cur=${cur} strong />`}</td>
+              ${showShare && html`<td class="r small muted num">${l.extra_usd > 0 && l.qty > 0 ? `+${money(convert(l.extra_usd / l.qty, 'USD', cur, d.usd_iqd), cur)}` : ''}</td>`}
               ${showCost && ['sale', 'sale_return', 'purchase'].includes(d.type) && html`<td class="r small muted num">${l.unit_cost_usd != null && l.kind !== 'text' ? money(convert(l.unit_cost_usd, 'USD', cur, d.usd_iqd), cur) : ''}</td>`}
             </tr>`)}</tbody>
           </table></div>`}
         </${Panel}>
         <div class="grid-2">
           <div class="stack">
+            ${d.type === 'purchase' && d.costs && d.costs.length > 0 && html`<${CostsView} d=${d} />`}
             ${d.type === 'service' && html`<${Panel} title=${t('doc.workshop')} icon="wrench"><div class="col gap-12">
               <div><div class="label">${t('doc.complaint')}</div><div style="white-space:pre-line" dir="auto">${d.complaint || html`<span class="muted">—</span>`}</div></div>
               <div><div class="label">${t('doc.work_done')}</div><div style="white-space:pre-line" dir="auto">${d.work_done || html`<span class="muted">—</span>`}</div></div>
@@ -289,11 +295,12 @@ export function DocView({ id }) {
             <div class="tr"><span class="muted">${t('doc.subtotal')}</span><${Money} value=${sub} cur=${cur} /></div>
             ${d.line_discount > 0 && html`<div class="tr"><span class="muted">${t('doc.line_discounts')}</span><span class="neg num">−${money(d.line_discount, cur)}</span></div>`}
             ${d.discount > 0 && html`<div class="tr"><span class="muted">${t('doc.discount')}</span><span class="neg num">−${money(d.discount, cur)}</span></div>`}
-            ${d.type === 'purchase' && d.extra_cost > 0 && html`<div class="tr"><span class="muted">${t('doc.extra_cost')}</span><${Money} value=${d.extra_cost} cur=${cur} /></div>`}
             <div class="tr grand"><span>${t('doc.grand_total')}</span><${Money} value=${d.total} cur=${cur} /></div>
             <div class="tr small muted"><span>${t('doc.rate_used')}: ${rateText(d.usd_iqd)}</span><span class="num">≈ ${money(convert(d.total, cur, cur === 'USD' ? 'IQD' : 'USD', d.usd_iqd), cur === 'USD' ? 'IQD' : 'USD')}</span></div>
             ${posted && def.pay && html`<div class="tr"><span class="muted">${t('doc.paid')}</span><${Money} value=${d.paid} cur=${cur} /></div>
               <div class="tr strong"><span>${t('doc.remaining')}</span><${Money} value=${d.remaining} cur=${cur} cls=${d.remaining > tolOf(cur) ? 'neg' : 'pos'} /></div>`}
+            ${hasCosts && html`<div class="tr small" style="border-top:1px dashed var(--line);padding-top:6px"><span class="muted">${t('doc.costs_total')}</span><span class="num">+${money(d.extra_cost, cur)}</span></div>
+              <div class="tr small"><span class="muted">${t('doc.goods_plus_costs')}</span><b class="num">${money(d.total + d.extra_cost, cur)}</b></div>`}
             ${showCost && d.type === 'sale' && posted && html`<div class="tr small" style="border-top:1px dashed var(--line);padding-top:6px"><span class="muted">${t('doc.cost')}</span><span class="num">${money(costCur, cur)}</span></div>
               <div class="tr small"><span class="muted">${t('doc.profit')}${d.total ? ` (${fpct((d.total - costCur) / d.total * 100)})` : ''}</span><b class=${`num ${d.total - costCur < 0 ? 'neg' : 'pos'}`}>${money(d.total - costCur, cur)}</b></div>`}
           </div></${Panel}>`}
@@ -349,7 +356,7 @@ export function DocView({ id }) {
 }
 
 /** the lines of a document on a phone: one small card per line */
-function LineCards({ d, showCost }) {
+function LineCards({ d, showCost, showShare }) {
   const cur = d.currency;
   const stockDoc = ['transfer', 'adjust'].includes(d.type);
   return html`<div class="mlines">${d.lines.map((l) => {
@@ -364,6 +371,7 @@ function LineCards({ d, showCost }) {
         <span class="num">${fqty(l.qty)} <span class="muted">${dn(l.unit) || ''}</span></span>
         ${!stockDoc && html`<span class="muted">×</span><${Money} value=${l.unit_price} cur=${cur} />`}
         ${l.discount ? html`<span class="num neg">−${l.discount_pct ? fpct(l.discount_pct) : money(l.discount, cur)}</span>` : null}
+        ${showShare && l.extra_usd > 0 && l.qty > 0 ? html`<span class="muted num">${t('doc.cost_share_short')}: +${money(convert(l.extra_usd / l.qty, 'USD', cur, d.usd_iqd), cur)}</span>` : null}
         ${showCost && ['sale', 'sale_return', 'purchase'].includes(d.type) && l.unit_cost_usd != null ? html`<span class="muted num">${t('doc.cost_short')}: ${money(convert(l.unit_cost_usd, 'USD', cur, d.usd_iqd), cur)}</span>` : null}
       </div>
       ${meta && html`<div class="ml-meta">${meta}</div>`}
@@ -409,7 +417,7 @@ function blankDoc(type) {
     price_list_id: isPurchaseSide(type) ? null : defaultPriceListId(), warehouse_id: usesWarehouse(type) ? defaultWarehouseId() : null, to_warehouse_id: '',
     vehicle: null, veh: { make_id: '', model_id: '', year: null }, km: null,
     staff_id: (boot().user || {}).id || '', technician_id: '', complaint: '', work_done: '', notes: '', internal_note: '', reason: type === 'adjust' ? 'correction' : '',
-    discount: 0, discount_pct: null, extra_cost: 0, extra_account_id: '', ref_doc_id: null, ref_no: null,
+    discount: 0, discount_pct: null, costs: [], cost_split: 'qty', ref_doc_id: null, ref_no: null,
     lines: [], payMode: null, pays: [],
   };
 }
@@ -425,7 +433,8 @@ function fromServer(src, { keepIds = true } = {}) {
     vehicle: src.vehicle_id || src.vehicle_plate ? { id: src.vehicle_id || null, plate: src.v_plate || src.vehicle_plate || '', description: src.vehicle_desc || '' } : null,
     km: src.km || null, staff_id: src.staff_id || '', technician_id: src.technician_id || '', complaint: src.complaint || '', work_done: src.work_done || '',
     notes: src.notes || '', internal_note: keepIds ? src.internal_note || '' : '', reason: src.reason || (src.type === 'adjust' ? 'correction' : ''),
-    discount: src.discount || 0, discount_pct: null, extra_cost: src.extra_cost || 0, extra_account_id: src.extra_account_id || '',
+    discount: src.discount || 0, discount_pct: null,
+    costs: keepIds ? (src.costs || []).map(costFromServer) : [], cost_split: src.cost_split || 'qty',
     ref_doc_id: src.ref_doc_id || null, ref_no: src.ref_no || null,
     lines: (src.lines || []).map((l) => ({
       key: newKey(), id: keepIds ? l.id : undefined, kind: l.kind, product_id: l.product_id, code: l.code, description: l.description, qty: l.qty, unit: l.unit,
@@ -584,7 +593,7 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
     set((x) => ({
       currency: cur,
       lines: x.lines.map((l) => ({ ...l, unit_price: cv(l.unit_price, lineRate(l)), discount: l.discount_pct ? l.discount : cv(l.discount, lineRate(l)) })),
-      discount: x.discount_pct ? x.discount : cv(x.discount), extra_cost: cv(x.extra_cost), pays: [],
+      discount: x.discount_pct ? x.discount : cv(x.discount), pays: [],
     }));
     if (d.lines.length) toast(t('doc.prices_converted', { from, to: cur }), 'warn');
   };
@@ -623,6 +632,7 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
     const total = round(sum - discount, dec);
     return { subtotal, lineDisc, sum, discount, total };
   }, [d]);
+  const costCalc = useMemo(() => (d && d.type === 'purchase' ? costTotals(d, calc) : null), [d, calc]);
 
   /* ---------- payments now */
   function defaultPayMode(doc) {
@@ -657,6 +667,9 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
     if (type === 'transfer' && (!d.to_warehouse_id || d.to_warehouse_id === d.warehouse_id)) { toast(t('doc.need_two_warehouses'), 'err'); return; }
     const badReturn = d.lines.find((l) => l.max_qty != null && l.qty > l.max_qty + 1e-9);
     if (badReturn) { toast(t('doc.return_too_much', { name: badReturn.description, n: fqty(badReturn.max_qty) }), 'err'); return; }
+    const costs = type === 'purchase' ? d.costs.filter((c) => Number(c.amount) > 0) : [];
+    if (costs.some((c) => c.pay === 'partner' && !(c.partner && c.partner.id))) { toast(t('doc.cost_need_partner'), 'err'); return; }
+    if (costs.length && !costCalc.rows.length) { toast(t('doc.cost_no_goods'), 'err'); return; }
     if (d.payMode && d.payMode !== 'credit' && paidInDoc > calc.total + tolOf(d.currency) && d.payMode !== 'full') {
       if (!(await confirmDialog({ title: t('doc.overpaid_title'), text: t('doc.overpaid_text', { amount: money(paidInDoc - calc.total, d.currency) }) }))) return;
     }
@@ -668,7 +681,12 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
       vehicle_id: v && v.id ? v.id : null, vehicle_plate: v ? v.plate || null : null, vehicle_desc: v ? (v.description || null) : null, km: d.km || null,
       vehicle: v && !v.id && (d.veh.make_id || d.veh.model_id || d.veh.year || d.veh.make_text || d.veh.model_text) ? { ...d.veh } : undefined,
       staff_id: d.staff_id || null, technician_id: d.technician_id || null, complaint: d.complaint, work_done: d.work_done, notes: d.notes, internal_note: d.internal_note,
-      reason: d.reason || null, discount: d.discount_pct ? 0 : d.discount, discount_pct: d.discount_pct || null, extra_cost: d.extra_cost || 0, extra_account_id: d.extra_account_id || null,
+      reason: d.reason || null, discount: d.discount_pct ? 0 : d.discount, discount_pct: d.discount_pct || null,
+      costs: type === 'purchase' ? costs.map((c) => ({
+        kind: c.kind, description: c.description || null, amount: Number(c.amount), currency: c.currency,
+        account_id: c.pay && c.pay.startsWith('acc:') ? c.pay.slice(4) : null, partner_id: c.pay === 'partner' && c.partner ? c.partner.id : null,
+      })) : undefined,
+      cost_split: type === 'purchase' ? d.cost_split : undefined,
       ref_doc_id: d.ref_doc_id || null,
       lines: d.lines.map((l) => ({
         id: l.id, kind: l.kind, product_id: l.product_id || null, code: l.code, description: l.description, qty: l.kind === 'text' ? 0 : l.qty, unit: l.unit,
@@ -777,8 +795,6 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
         ${['sale', 'quote', 'service', 'sale_return'].includes(type) && html`<${Field} label=${t('doc.staff')}><${StaffSelect} value=${d.staff_id} onValue=${(v) => set({ staff_id: v })} /></${Field}>`}
         ${type === 'service' && html`<${Field} label=${t('doc.technician')}><${StaffSelect} value=${d.technician_id} onValue=${(v) => set({ technician_id: v })} /></${Field}>`}
         ${def.statuses && html`<${Field} label=${t('doc.status')}><${Select} value=${d.status || def.statuses[0]} onValue=${(v) => set({ status: v })} options=${MANUAL_STATUSES[type].map((s) => ({ value: s, label: t(`doc.status.${s}`) }))} /></${Field}>`}
-        ${type === 'purchase' && html`<${Field} label=${t('doc.extra_cost')} hint=${t('doc.extra_cost_hint')}><${NumInput} value=${d.extra_cost} onValue=${(v) => set({ extra_cost: v || 0 })} dec=${dec} /></${Field}>`}
-        ${type === 'purchase' && d.extra_cost > 0 && html`<${Field} label=${t('doc.extra_account')}><${AccountSelect} value=${d.extra_account_id} onValue=${(v) => set({ extra_account_id: v })} placeholder=${t('doc.extra_unpaid')} /></${Field}>`}
       </div>
       ${d.partner && d.partner.balances && Object.keys(d.partner.balances).length > 0 && can('partners.balance') && html`<div class="row small mt-8 gap-8"><span class="muted">${t('partner.balance')}:</span><${Balances} value=${d.partner.balances} />
         ${d.partner.credit_limit ? html`<span class="muted">· ${t('partner.credit_limit')}: ${money(d.partner.credit_limit, d.partner.credit_currency || d.currency)}</span>` : null}</div>`}
@@ -855,6 +871,8 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
       </table></div>`}
     </${Panel}>
 
+    ${type === 'purchase' && html`<${CostsPanel} d=${d} set=${set} cc=${costCalc} phone=${phone} />`}
+
     <div class="grid-2">
       <${Panel} title=${t('doc.notes')} icon="notebook-pen"><div class="col gap-12">
         <${Field} label=${t('doc.notes_print')}><${Textarea} value=${d.notes} onValue=${(v) => set({ notes: v })} rows=${3} /></${Field}>
@@ -867,6 +885,8 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
           <div style="width:150px"><${DiscountInput} amount=${d.discount} pct=${d.discount_pct} dec=${dec} onChange=${(a, p) => set({ discount: a, discount_pct: p })} /></div></div>
         <div class="tr grand"><span>${t('doc.grand_total')}</span><span class="money">${money(calc.total, d.currency)}</span></div>
         <div class="tr small muted"><span></span><span class="num">≈ ${money(convert(calc.total, d.currency, d.currency === 'USD' ? 'IQD' : 'USD', d.usd_iqd), d.currency === 'USD' ? 'IQD' : 'USD')}</span></div>
+        ${costCalc && costCalc.total > 0 && html`<div class="tr small" style="border-top:1px dashed var(--line);padding-top:6px"><span class="muted">${t('doc.costs_total')}</span><span class="num">+${money(costCalc.total, d.currency)}</span></div>
+          <div class="tr small"><span class="muted">${t('doc.goods_plus_costs')}</span><b class="num">${money(calc.total + costCalc.total, d.currency)}</b></div>`}
         ${d.payMode && html`<div class="form-section" style="margin-top:8px; padding-bottom:0">
           <div class="row between mb-8"><b class="small">${t(payDir === 'in' ? 'doc.payment_now_in' : 'doc.payment_now_out')}</b>
             <${Segmented} value=${d.payMode} onValue=${(v) => set({ payMode: v, pays: v === 'split' ? [{ key: newKey(), account_id: payAccount, amount: round(convert(calc.total, d.currency, (account(payAccount) || { currency: d.currency }).currency, d.usd_iqd), 2) }] : [] })}
@@ -896,6 +916,123 @@ export function DocEditor({ type: typeProp, id, query = {} }) {
       <${Btn} kind="primary" icon="check" disabled=${busy} onClick=${() => save({ post: true })} kbd="F9">${d.id && d.status === 'posted' ? t('doc.update') : def.posting ? t('doc.save_post') : t('common.save')}</${Btn}>
     </div>
   </div>`;
+}
+
+/* ================================================================== purchase costs (customs, freight, other) */
+const COST_KINDS = ['customs', 'freight', 'other'];
+const COST_ICONS = { customs: 'landmark', freight: 'truck', other: 'receipt' };
+
+/** a cost row from the server, as the form keeps it: pay = 'supplier' | 'partner' | 'acc:<account id>' */
+function costFromServer(c) {
+  return {
+    key: newKey(), kind: c.kind || 'other', description: c.description || '', amount: c.amount, currency: c.currency,
+    pay: c.account_id ? `acc:${c.account_id}` : c.partner_id ? 'partner' : 'supplier',
+    partner: c.partner_id ? { id: c.partner_id, name: c.partner_name || '', kind: c.partner_kind, phone: c.partner_phone } : null,
+  };
+}
+
+/** a new cost: in the invoice's currency, paid from that currency's cash box when there is one */
+function newCost(kind, currency) {
+  const acc = defaultAccount(currency);
+  return { key: newKey(), kind, description: '', amount: null, currency, pay: acc ? `acc:${acc.id}` : 'supplier', partner: null };
+}
+
+/**
+ * What the costs do to the goods, as the shop computer will work it out: the total in the invoice currency and,
+ * per product line, its price per unit (after discounts), its share of the costs per unit and the two together.
+ * 'qty': the same amount on every unit; 'value': by the lines' amounts (with no amounts, per unit).
+ */
+function costTotals(d, calc) {
+  const dec = decimals(d.currency);
+  const share = calc && calc.sum ? calc.total / calc.sum : 1;
+  const total = (d.costs || []).reduce((s, c) => s + (Number(c.amount) > 0 ? convert(Number(c.amount), c.currency, d.currency, d.usd_iqd) : 0), 0);
+  const goods = d.lines.filter((l) => l.kind === 'product' && l.product_id && Number(l.qty) > 0);
+  const nets = goods.map((l) => Math.max(lineCalc(l, dec).total, 0));
+  const qtySum = goods.reduce((s, l) => s + Number(l.qty), 0);
+  const valSum = nets.reduce((s, v) => s + v, 0);
+  const byQty = d.cost_split === 'qty' || !(valSum > 0);
+  const rows = goods.map((l, i) => {
+    const qty = Number(l.qty);
+    const extra = !(total > 0) ? 0 : byQty ? total * qty / qtySum : total * nets[i] / valSum;
+    const unitNet = (nets[i] * share) / qty;
+    return { key: l.key, name: l.description, qty, unit: l.unit, unitNet, unitExtra: extra / qty, unitCost: unitNet + extra / qty };
+  });
+  return { total, qtySum, byQty, rows, perUnit: qtySum ? total / qtySum : 0, pct: valSum ? total / (valSum * share) * 100 : 0 };
+}
+
+function CostsPanel({ d, set, cc, phone }) {
+  const cur = d.currency;
+  const setCost = (key, patch) => set((x) => ({ costs: x.costs.map((c) => (c.key === key ? { ...c, ...patch } : c)) }));
+  const add = (kind) => set((x) => ({ costs: [...x.costs, newCost(kind, x.currency)] }));
+  const remove = (key) => set((x) => ({ costs: x.costs.filter((c) => c.key !== key) }));
+  const payOptions = [
+    { value: 'supplier', label: t('doc.cost_pay_supplier') },
+    { value: 'partner', label: t('doc.cost_pay_partner') },
+    ...accountOptions().map((o) => ({ value: `acc:${o.value}`, label: t('doc.cost_pay_account', { name: o.label }) })),
+  ];
+  // a cost paid from the default cash box follows its currency to that currency's box
+  const changeCurrency = (c, v) => {
+    const was = defaultAccount(c.currency);
+    const now = defaultAccount(v);
+    setCost(c.key, { currency: v, pay: was && now && c.pay === `acc:${was.id}` ? `acc:${now.id}` : c.pay });
+  };
+  const shown = cc && cc.total > 0;
+  return html`<${Panel} title=${t('doc.costs')} icon="truck" body=${false}>
+    <div class="panel-body col gap-12">
+      <p class="small dim" style="margin:0;max-width:72ch">${t('doc.costs_hint')}</p>
+      ${d.costs.length > 0 && html`<div class="cost-rows">
+        ${!phone && html`<div class="cost-row cost-head"><span>${t('doc.cost_kind')}</span><span>${t('common.description')}</span><span class="r">${t('doc.cost_amount')}</span>
+          <span>${t('common.currency')}</span><span>${t('doc.cost_pay')}</span><span></span></div>`}
+        ${d.costs.map((c) => html`<div class="cost-row" key=${c.key}>
+        <div class="cr-kind"><${Select} size="sm" value=${c.kind} onValue=${(v) => setCost(c.key, { kind: v })} aria-label=${t('doc.cost_kind')}
+          options=${COST_KINDS.map((k) => ({ value: k, label: t(`doc.cost_kind.${k}`) }))} /></div>
+        <div class="cr-desc"><${Input} size="sm" value=${c.description} onValue=${(v) => setCost(c.key, { description: v })} placeholder=${t('doc.cost_desc_ph')} dir="auto" aria-label=${t('common.description')} /></div>
+        <div class="cr-amt"><${NumInput} size="sm" value=${c.amount} onValue=${(v) => setCost(c.key, { amount: v })} dec=${decimals(c.currency)} placeholder=${t('doc.cost_amount')} title=${t('doc.cost_amount')} /></div>
+        <div class="cr-cur"><${CurrencySelect} size="sm" value=${c.currency} onValue=${(v) => changeCurrency(c, v)} /></div>
+        <div class="cr-pay"><${Select} size="sm" value=${c.pay} onValue=${(v) => setCost(c.key, { pay: v })} options=${payOptions} aria-label=${t('doc.cost_pay')} /></div>
+        <div class="cr-x"><${IconBtn} icon="x" danger title=${t('common.remove')} onClick=${() => remove(c.key)} /></div>
+        ${c.pay === 'partner' && html`<div class="cr-partner"><${PartnerPicker} size="sm" kind="supplier" value=${c.partner} onChange=${(p) => setCost(c.key, { partner: p })} placeholder=${t('doc.cost_partner_ph')} showBalance=${false} /></div>`}
+      </div>`)}</div>`}
+      <div class="row gap-8 wrap">${COST_KINDS.map((k) => html`<${Btn} size="sm" icon="plus" onClick=${() => add(k)}>${t(`doc.cost_kind.${k}`)}</${Btn}>`)}</div>
+      ${shown && html`<div class="cost-split">
+        <div class="row between gap-12 wrap">
+          <div class="row gap-8 wrap" style="align-items:center"><span class="small muted">${t('doc.cost_split')}</span>
+            <${Segmented} value=${d.cost_split} onValue=${(v) => set({ cost_split: v })} options=${[{ value: 'qty', label: t('doc.cost_split_qty') }, { value: 'value', label: t('doc.cost_split_value') }]} /></div>
+          <span class="small">${t('doc.costs_total')}: <b class="num">${money(cc.total, cur)}</b></span>
+        </div>
+        <p class="small muted" style="margin:6px 0 0">${cc.byQty
+          ? t('doc.cost_split_qty_text', { qty: fqty(cc.qtySum), total: money(cc.total, cur), unit: money(cc.perUnit, cur) })
+          : t('doc.cost_split_value_text', { pct: fpct(cc.pct) })}</p>
+      </div>`}
+    </div>
+    ${shown && cc.rows.length > 0 && (phone ? html`<div class="mini-list cost-break">${cc.rows.map((r) => html`<div class="mini-row" key=${r.key}>
+        <div class="grow" style="min-width:0"><div class="small strong" dir="auto">${r.name}</div>
+          <div class="tiny muted num">${fqty(r.qty)} ${dn(r.unit) || ''} · ${money(r.unitNet, cur)} + ${money(r.unitExtra, cur)}</div></div>
+        <div style="text-align:end"><b class="num">${money(r.unitCost, cur)}</b><div class="tiny muted">${t('doc.cost_unit_cost')}</div></div>
+      </div>`)}</div>`
+      : html`<div class="table-wrap cost-break"><table class="tbl compact">
+        <thead><tr><th>${t('print.col.desc')}</th><th class="r">${t('print.col.qty')}</th><th class="r">${t('doc.cost_unit_price')}</th><th class="r">${t('doc.cost_unit_share')}</th><th class="r">${t('doc.cost_unit_cost')}</th></tr></thead>
+        <tbody>${cc.rows.map((r) => html`<tr key=${r.key}><td dir="auto">${r.name}</td><td class="r num">${fqty(r.qty)} <span class="muted small">${dn(r.unit) || ''}</span></td>
+          <td class="r num">${money(r.unitNet, cur)}</td><td class="r num">+${money(r.unitExtra, cur)}</td><td class="r num strong">${money(r.unitCost, cur)}</td></tr>`)}</tbody>
+      </table></div>`)}
+  </${Panel}>`;
+}
+
+/** on a purchase's page: its costs, how each was paid, and how they were spread */
+function CostsView({ d }) {
+  const cur = d.currency;
+  return html`<${Panel} title=${t('doc.costs')} icon="truck" body=${false}>
+    <div class="mini-list">${d.costs.map((c) => html`<div class="mini-row" key=${c.id}>
+      <${Icon} name=${COST_ICONS[c.kind] || 'receipt'} />
+      <div class="grow" style="min-width:0"><div class="small strong" dir="auto">${t(`doc.cost_kind.${c.kind}`)}${c.description ? html` <span class="muted" style="font-weight:400">— ${c.description}</span>` : null}</div>
+        <div class="tiny muted" dir="auto">${c.account_id ? t('doc.cost_paid_from', { name: c.account_name || '—' }) : t('doc.cost_owed_to', { name: dn(c.partner_name || d.partner_name || '—') })}</div></div>
+      <div style="text-align:end"><${Money} value=${c.amount} cur=${c.currency} strong />${c.currency !== cur && html`<div class="tiny muted num">≈ ${money(convert(c.amount, c.currency, cur, d.usd_iqd), cur)}</div>`}</div>
+    </div>`)}</div>
+    <div class="panel-body totals-box cost-foot">
+      <div class="tr"><span class="muted">${t('doc.cost_split')}</span><span>${t(d.cost_split === 'qty' ? 'doc.cost_split_qty' : 'doc.cost_split_value')}</span></div>
+      <div class="tr"><span class="muted">${t('doc.costs_total')}</span><b class="num">${money(d.extra_cost, cur)}</b></div>
+    </div>
+  </${Panel}>`;
 }
 
 /** discount input: type "10%" for a percentage or a plain amount */

@@ -342,6 +342,25 @@ const MIGRATIONS = [
   CREATE INDEX sessions_user ON sessions(user_id);
   ALTER TABLE users ADD COLUMN pin_len INTEGER;
   `,
+  // ---------------------------------------------------------------- v7: a purchase's costs (customs, freight, other) one by one, each paid
+  // from a cash/bank account or owed to the supplier or another account; spread over the goods per unit or by
+  // value (cost_split). docs.extra_cost stays as their total in the invoice currency. The single extra cost of
+  // older purchases becomes one "other" cost, spread by value as before.
+  `
+  CREATE TABLE doc_costs (
+    id TEXT PRIMARY KEY, doc_id TEXT NOT NULL REFERENCES docs(id), sort INTEGER NOT NULL DEFAULT 0,
+    kind TEXT NOT NULL DEFAULT 'other', description TEXT, currency TEXT NOT NULL, amount REAL NOT NULL DEFAULT 0,
+    account_id TEXT, partner_id TEXT, created_at TEXT
+  );
+  CREATE INDEX doc_costs_doc ON doc_costs(doc_id);
+  ALTER TABLE docs ADD COLUMN cost_split TEXT;
+  INSERT INTO doc_costs (id, doc_id, sort, kind, description, currency, amount, account_id, partner_id, created_at)
+    SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-'
+        || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))),
+      id, 0, 'other', NULL, currency, extra_cost, extra_account_id, NULL, created_at
+    FROM docs WHERE type = 'purchase' AND extra_cost > 0;
+  UPDATE docs SET cost_split = 'value' WHERE type = 'purchase' AND extra_cost > 0;
+  `,
 ];
 
 module.exports = { MIGRATIONS };

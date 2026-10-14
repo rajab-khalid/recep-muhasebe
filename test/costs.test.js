@@ -1,0 +1,197 @@
+'use strict';
+/*
+ * A purchase's costs — customs, freight, other — entered one by one: each paid from a cash box or owed to the
+ * supplier or another account (e.g. the carrier), spread over the goods per unit or by value, so the products'
+ * costs (and profits) include them.
+ */
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
+const { DatabaseSync } = require('node:sqlite');
+const { createApp } = require('../server/app');
+const { MIGRATIONS } = require('../server/schema');
+
+function freshApp(name) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `rm-costs-${name}-`));
+  const app = createApp({ dataDir: dir });
+  app.setup.complete({ lang: 'tr', usd_iqd: 1500, company: { name: 'Test Shop' }, admin: { full_name: 'Owner', username: 'owner', pin: '1234' } });
+  const owner = app.users.list()[0];
+  return { app, ctx: { user: owner, ip: '127.0.0.1' } };
+}
+const near = (a, b, eps = 1e-4, msg = '') => assert.ok(Math.abs(a - b) <= eps, `${msg} expected ${b}, got ${a}`);
+const code = (fn) => { try { fn(); } catch (e) { return e.code; } return null; };
+
+/** a cheap and a dear product, the supplier and a carrier */
+function shop(name) {
+  const t = freshApp(name);
+  const { app, ctx } = t;
+  t.cloth = app.products.save({ name: 'Mikrofiber bez', currency: 'IQD' }, ctx);
+  t.wax = app.products.save({ name: 'Seramik kaplama', currency: 'IQD' }, ctx);
+  t.supplier = app.partners.save({ kind: 'supplier', name: 'İstanbul Toptan' }, ctx);
+  t.carrier = app.partners.save({ kind: 'supplier', name: 'Habur Nakliyat' }, ctx);
+  t.cashIqd = app.cash.defaultAccount('IQD');
+  t.buy = (extra = {}) => app.docs.save({
+    type: 'purchase', partner_id: t.supplier, currency: 'IQD', usd_iqd: 1500, post: true,
+    lines: [{ product_id: t.cloth, qty: 10, unit_price: 1000 }, { product_id: t.wax, qty: 2, unit_price: 50000 }],
+    ...extra,
+  }, ctx);
+  return t;
+}
+const costsOf = (app, docId) => app.db.all('SELECT * FROM doc_costs WHERE doc_id = ? ORDER BY sort', [docId]);
+const lineOf = (app, docId, productId) => app.db.get('SELECT * FROM doc_lines WHERE doc_id = ? AND product_id = ?', [docId, productId]);
+const extraMoves = (app, docId) => ({
+  cash: app.db.all("SELECT account_id, amount, description FROM money_moves WHERE doc_id = ? AND kind = 'purchase_extra' AND voided = 0", [docId]),
+  partners: app.db.all("SELECT partner_id, currency, amount, description FROM partner_moves WHERE doc_id = ? AND kind = 'purchase_extra' AND voided = 0", [docId]),
+});
+
+test('customs, freight and other costs: each paid its own way, the same amount on every unit', () => {
+  const t = shop('qty');
+  const { app } = t;
+  const r = t.buy({
+    cost_split: 'qty',
+    costs: [
+      { kind: 'customs', description: 'İbrahim Halil', amount: 24000, currency: 'IQD', account_id: t.cashIqd.id },
+      { kind: 'freight', amount: 10, currency: 'USD', partner_id: t.carrier },
+      { kind: 'other', amount: 6000, currency: 'IQD' },
+      { kind: 'other', amount: 0, currency: 'IQD' }, // empty rows are dropped
+    ],
+  });
+  const d = app.docs.get(r.id);
+  // 24.000 + $10 (15.000) + 6.000 = 45.000 IQD over 12 units: 3.750 IQD on each unit
+  assert.equal(d.extra_cost, 45000);
+  assert.equal(d.cost_split, 'qty');
+  assert.equal(d.costs.length, 3);
+  assert.deepEqual(d.costs.map((c) => c.kind), ['customs', 'freight', 'other']);
+  assert.equal(d.costs[0].account_name, t.cashIqd.name);
+  assert.equal(d.costs[1].partner_name, 'Habur Nakliyat');
+  const cloth = lineOf(app, r.id, t.cloth);
+  const wax = lineOf(app, r.id, t.wax);
+  near(cloth.unit_cost_usd, (1000 + 3750) / 1500, 1e-6, 'cloth');
+  near(wax.unit_cost_usd, (50000 + 3750) / 1500, 1e-6, 'wax');
+  near(cloth.extra_usd, 3750 * 10 / 1500, 1e-6);
+  near(wax.extra_usd, 3750 * 2 / 1500, 1e-6);
+  near(app.db.val('SELECT avg_cost_usd FROM products WHERE id = ?', [t.cloth]), (1000 + 3750) / 1500, 1e-6, 'stock cost');
+  // customs left the cash box, freight is owed to the carrier (in dollars), the rest to the supplier with the goods
+  assert.equal(app.cash.balance(t.cashIqd.id), -24000);
+  assert.deepEqual(app.partners.balances(t.carrier), { USD: -10 });
+  assert.deepEqual(app.partners.balances(t.supplier), { IQD: -(110000 + 6000) });
+  const m = extraMoves(app, r.id);
+  assert.deepEqual(m.cash.map((x) => x.description), ['Gümrük — İbrahim Halil']);
+  assert.deepEqual(m.partners.map((x) => x.description).sort(), ['Diğer masraf', 'Navlun']);
+  // the product page shows the cost with expenses
+  const p = app.products.get(t.cloth);
+  near(p.recent_purchases[0].extra_usd, 25, 1e-6);
+});
+
+test('by value: dear goods carry more, every product the same share of its price', () => {
+  const t = shop('value');
+  const { app } = t;
+  const r = t.buy({ cost_split: 'value', costs: [{ kind: 'customs', amount: 11000, currency: 'IQD', account_id: t.cashIqd.id }] });
+  // 11.000 on 110.000 of goods: 10% on each price
+  near(lineOf(app, r.id, t.cloth).unit_cost_usd, 1100 / 1500, 1e-6);
+  near(lineOf(app, r.id, t.wax).unit_cost_usd, 55000 / 1500, 1e-6);
+  // nothing has a price (free goods): shared per unit instead
+  const free = app.docs.save({
+    type: 'purchase', partner_id: t.supplier, currency: 'IQD', usd_iqd: 1500, post: true, cost_split: 'value',
+    lines: [{ product_id: t.cloth, qty: 4, unit_price: 0 }], costs: [{ kind: 'freight', amount: 6000, currency: 'IQD', account_id: t.cashIqd.id }],
+  }, t.ctx);
+  near(lineOf(app, free.id, t.cloth).unit_cost_usd, 1500 / 1500, 1e-6);
+});
+
+test('a service line carries no costs; costs need goods; negative costs are refused', () => {
+  const t = shop('rules');
+  const { app, ctx } = t;
+  const r = app.docs.save({
+    type: 'purchase', partner_id: t.supplier, currency: 'IQD', usd_iqd: 1500, post: true, cost_split: 'qty',
+    lines: [{ product_id: t.cloth, qty: 10, unit_price: 1000 }, { kind: 'labor', description: 'Montaj', qty: 1, unit_price: 5000 }],
+    costs: [{ kind: 'freight', amount: 10000, currency: 'IQD', account_id: t.cashIqd.id }],
+  }, ctx);
+  near(lineOf(app, r.id, t.cloth).extra_usd, 10000 / 1500, 1e-6, 'all of it on the goods');
+  assert.equal(code(() => app.docs.save({
+    type: 'purchase', partner_id: t.supplier, currency: 'IQD', post: true,
+    lines: [{ kind: 'labor', description: 'Montaj', qty: 1, unit_price: 5000 }], costs: [{ kind: 'freight', amount: 100, currency: 'IQD' }],
+  }, ctx)), 'costs_need_goods');
+  assert.equal(code(() => t.buy({ costs: [{ kind: 'customs', amount: -5, currency: 'IQD' }] })), 'bad_cost');
+  assert.equal(code(() => t.buy({ costs: [{ kind: 'customs', amount: 5, currency: 'IQD', partner_id: 'nobody' }] })), 'partner_not_found');
+  assert.equal(code(() => t.buy({ costs: [{ kind: 'customs', amount: 5, currency: 'IQD', account_id: 'nowhere' }] })), 'account_not_found');
+});
+
+test('editing a purchase replaces its costs and their payments; cancelling takes them back', () => {
+  const t = shop('edit');
+  const { app, ctx } = t;
+  const r = t.buy({
+    cost_split: 'qty',
+    costs: [{ kind: 'customs', amount: 24000, currency: 'IQD', account_id: t.cashIqd.id }, { kind: 'freight', amount: 10, currency: 'USD', partner_id: t.carrier }],
+  });
+  const d = app.docs.get(r.id);
+  app.docs.save({
+    ...d, id: r.id, lines: d.lines, post: true,
+    costs: [{ kind: 'customs', amount: 30000, currency: 'IQD', account_id: t.cashIqd.id }],
+  }, ctx);
+  assert.equal(app.cash.balance(t.cashIqd.id), -30000);
+  assert.deepEqual(app.partners.balances(t.carrier), {}, 'the freight is no longer owed');
+  assert.equal(costsOf(app, r.id).length, 1);
+  near(lineOf(app, r.id, t.cloth).unit_cost_usd, (1000 + 2500) / 1500, 1e-6, '30.000 over 12 units');
+  app.docs.cancel(r.id, 'yanlış', ctx);
+  assert.equal(app.cash.balance(t.cashIqd.id), 0);
+  assert.deepEqual(app.partners.balances(t.supplier), {});
+  assert.equal(costsOf(app, r.id).length, 1, 'the cancelled invoice still shows what it had');
+});
+
+test('a draft keeps its costs and applies them when posted; deleting the draft removes them', () => {
+  const t = shop('draft');
+  const { app, ctx } = t;
+  const r = t.buy({ post: false, cost_split: 'qty', costs: [{ kind: 'freight', amount: 12000, currency: 'IQD', account_id: t.cashIqd.id }] });
+  assert.equal(app.cash.balance(t.cashIqd.id), 0, 'nothing paid while it is a draft');
+  app.docs.post(r.id, ctx);
+  assert.equal(app.cash.balance(t.cashIqd.id), -12000);
+  near(lineOf(app, r.id, t.cloth).unit_cost_usd, 2000 / 1500, 1e-6);
+  const r2 = t.buy({ post: false, costs: [{ kind: 'freight', amount: 500, currency: 'IQD' }] });
+  app.docs.removeDraft(r2.id, ctx);
+  assert.equal(costsOf(app, r2.id).length, 0);
+});
+
+test('the older single extra cost still works, and sending it back unchanged keeps the cost rows', () => {
+  const t = shop('legacy');
+  const { app, ctx } = t;
+  const r = t.buy({ extra_cost: 11000, extra_account_id: t.cashIqd.id });
+  const rows = costsOf(app, r.id);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].kind, 'other');
+  assert.equal(rows[0].account_id, t.cashIqd.id);
+  assert.equal(app.docs.get(r.id).cost_split, 'value', 'spread by value, as before');
+  near(lineOf(app, r.id, t.cloth).unit_cost_usd, 1100 / 1500, 1e-6);
+  // a newer invoice with several costs edited by an older client (one total, unchanged): rows stay as they are
+  const r2 = t.buy({ cost_split: 'qty', costs: [{ kind: 'customs', amount: 3000, currency: 'IQD', account_id: t.cashIqd.id }, { kind: 'freight', amount: 3000, currency: 'IQD', partner_id: t.carrier }] });
+  const before = costsOf(app, r2.id).map((c) => [c.kind, c.amount, c.account_id, c.partner_id]);
+  const d2 = app.docs.get(r2.id);
+  app.docs.save({ ...d2, id: r2.id, lines: d2.lines, costs: undefined, extra_cost: d2.extra_cost, extra_account_id: null, post: true }, ctx);
+  assert.deepEqual(costsOf(app, r2.id).map((c) => [c.kind, c.amount, c.account_id, c.partner_id]), before);
+  assert.equal(app.docs.get(r2.id).cost_split, 'qty');
+});
+
+test('an older database: its single extra costs become cost rows, spread by value as before', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rm-costs-mig-'));
+  const file = path.join(dir, 'recep-muhasebe.db');
+  const raw = new DatabaseSync(file);
+  raw.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');
+  for (let v = 0; v < 6; v++) raw.exec(MIGRATIONS[v]);
+  raw.exec("INSERT INTO meta (key, value) VALUES ('schema_version', '6')");
+  raw.exec(`INSERT INTO docs (id, type, no, date, status, currency, rate, usd_iqd, extra_cost, extra_account_id, created_at)
+    VALUES ('d1', 'purchase', 'AF1', '2026-10-01', 'posted', 'IQD', 1500, 1500, 9000, 'acc-1', '2026-10-01T10:00:00Z'),
+           ('d2', 'purchase', 'AF2', '2026-10-01', 'posted', 'USD', 1, 1500, 0, NULL, '2026-10-01T10:00:00Z'),
+           ('d3', 'sale', 'SF1', '2026-10-01', 'posted', 'IQD', 1500, 1500, 0, NULL, '2026-10-01T10:00:00Z')`);
+  raw.close();
+  const app = createApp({ dataDir: dir });
+  const rows = app.db.all('SELECT * FROM doc_costs');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].doc_id, 'd1');
+  assert.equal(rows[0].amount, 9000);
+  assert.equal(rows[0].currency, 'IQD');
+  assert.equal(rows[0].account_id, 'acc-1');
+  assert.equal(rows[0].kind, 'other');
+  assert.match(rows[0].id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.deepEqual(app.db.all('SELECT id, cost_split FROM docs ORDER BY id').map((d) => [d.id, d.cost_split]), [['d1', 'value'], ['d2', null], ['d3', null]]);
+});

@@ -86,6 +86,62 @@ module.exports = (app) => {
     return { subtotal: U.round(subtotal, dec + 2), line_discount: U.round(lineDiscount, dec + 2), discount, total, lines_sum: U.round(sum, dec) };
   }
 
+  /* ------------------------------------------------------------------ purchase costs (customs, freight, other) */
+  const COST_KINDS = ['customs', 'freight', 'other'];
+  // the name written into cash and account statements, in the shop's language
+  const COST_NAMES = {
+    customs: { tr: 'Gümrük', en: 'Customs', ar: 'جمارك', ku: 'Gumrik' },
+    freight: { tr: 'Navlun', en: 'Freight', ar: 'شحن', ku: 'Veguhastin' },
+    other: { tr: 'Diğer masraf', en: 'Other cost', ar: 'مصاريف أخرى', ku: 'Têçûnên din' },
+  };
+  function costName(c) {
+    const lang = (app.getSetting('general') || {}).lang || 'tr';
+    const names = COST_NAMES[c.kind] || COST_NAMES.other;
+    const base = names[lang] || names.tr;
+    return c.description ? `${base} — ${c.description}` : base;
+  }
+
+  /**
+   * A purchase's costs as they will be kept: { rows: [{ kind, description, amount, currency, account_id,
+   * partner_id }], split: 'qty' | 'value' }. A cost is paid from a cash/bank account (account_id), or owed to
+   * another account (partner_id: e.g. the carrier), or else to the supplier.
+   * Older callers send one `extra_cost` in the invoice currency (paid from `extra_account_id` or owed to the
+   * supplier, spread by value): it becomes one "other" cost. Sending the same total back keeps the rows as they are.
+   */
+  function resolveCosts(data, existing, currency) {
+    if (data.type !== 'purchase') return { rows: [], split: null };
+    let list = data.costs;
+    let split = ['qty', 'value'].includes(data.cost_split) ? data.cost_split : null;
+    if (!Array.isArray(list)) {
+      const extra = U.num(data.extra_cost);
+      const kept = existing ? db.all('SELECT * FROM doc_costs WHERE doc_id = ? ORDER BY sort', [existing.id]) : [];
+      const sameAccount = data.extra_account_id === undefined || (data.extra_account_id || null) === (existing ? existing.extra_account_id || null : null);
+      if (existing && kept.length && Math.abs(extra - U.num(existing.extra_cost)) < 1e-6 && sameAccount) list = kept;
+      else list = extra > 0 ? [{ kind: 'other', amount: extra, currency, account_id: data.extra_account_id || null }] : [];
+      if (!split) split = (existing && existing.cost_split) || 'value';
+    }
+    if (!split) split = (existing && existing.cost_split) || 'qty';
+    U.assert(list.length <= 30, 'too_many_costs', 'At most 30 costs on one invoice', 400);
+    const rows = [];
+    for (const c of list) {
+      const raw = U.num(c && c.amount);
+      U.assert(raw >= 0, 'bad_cost', 'A cost cannot be negative', 400);
+      const cur = (c && c.currency) || currency;
+      app.currency(cur);
+      const amount = app.money(raw, cur);
+      if (!(amount > 0)) continue;
+      const accountId = c.account_id || null;
+      if (accountId) app.cash.account(accountId);
+      const partnerId = !accountId && c.partner_id ? String(c.partner_id) : null;
+      if (partnerId) U.assert(db.get('SELECT 1 FROM partners WHERE id = ?', [partnerId]), 'partner_not_found', 'Account not found', 404);
+      rows.push({
+        kind: COST_KINDS.includes(c.kind) ? c.kind : 'other', description: U.str(c.description, 120),
+        amount, currency: cur, account_id: accountId, partner_id: partnerId,
+      });
+    }
+    return { rows, split };
+  }
+
   /* ------------------------------------------------------------------ queries */
   function get(id, opts = {}) {
     const d = db.get(`SELECT d.*, p.name AS partner_display, p.phone AS partner_phone2, p.address AS partner_address, p.tax_no AS partner_tax_no,
@@ -113,6 +169,11 @@ module.exports = (app) => {
           WHERE rl.ref_line_id = ? AND rd.status = 'posted'`, [l.id]) || 0;
       }
     }
+    // a purchase's costs (customs, freight...), with where each was paid or who it is owed to
+    d.costs = d.type === 'purchase' ? db.all(`SELECT c.id, c.kind, c.description, c.currency, c.amount, c.account_id, c.partner_id,
+        a.name AS account_name, a.currency AS account_currency, pa.name AS partner_name, pa.kind AS partner_kind, pa.phone AS partner_phone
+      FROM doc_costs c LEFT JOIN money_accounts a ON a.id = c.account_id LEFT JOIN partners pa ON pa.id = c.partner_id
+      WHERE c.doc_id = ? ORDER BY c.sort`, [id]) : [];
     d.payments = db.all(`SELECT p.id, p.no, p.date, p.direction, p.method, p.currency, p.amount, p.applied_currency, p.applied_amount, p.usd_iqd,
         p.purpose, al.amount AS allocated, a.name AS account_name, p.status
       FROM payment_allocations al JOIN payments p ON p.id = al.payment_id LEFT JOIN money_accounts a ON a.id = p.account_id
@@ -301,15 +362,17 @@ module.exports = (app) => {
     // sale / purchase / returns
     const sumLines = lines.reduce((s, l) => s + (l.kind === 'text' ? 0 : l.line_total), 0);
     const share = sumLines > 0 ? doc.total / sumLines : 1; // doc-level discount spread over lines
-    const extra = doc.type === 'purchase' ? U.num(doc.extra_cost) : 0;
+    // a purchase's costs (customs, freight...) go onto its goods: the same amount on every unit, or by value
+    const costs = doc.type === 'purchase' ? db.all('SELECT * FROM doc_costs WHERE doc_id = ? ORDER BY sort', [doc.id]) : [];
+    const extraOf = spreadCosts(doc, lines, costs);
     for (const l of lines) {
       if (l.kind !== 'product' || !l.product_id || !l.qty) continue;
       const p = prodOf(l.product_id);
       if (!p) continue;
       if (doc.type === 'purchase') {
-        const landed = l.line_total * share + (sumLines > 0 ? extra * (l.line_total / sumLines) : 0);
-        const unitUsd = l.qty ? landed / l.qty / doc.rate : 0;
-        db.run('UPDATE doc_lines SET unit_cost_usd = ?, extra_usd = ? WHERE id = ?', [U.round(unitUsd, 6), U.round((sumLines > 0 ? extra * (l.line_total / sumLines) : 0) / doc.rate, 6), l.id]);
+        const extraUsd = extraOf(l);
+        const unitUsd = l.qty ? ((l.line_total * share) / doc.rate + extraUsd) / l.qty : 0;
+        db.run('UPDATE doc_lines SET unit_cost_usd = ?, extra_usd = ? WHERE id = ?', [U.round(unitUsd, 6), U.round(extraUsd, 6), l.id]);
         if (p.track_stock) {
           app.stock.addMove({ date: doc.date, product_id: p.id, warehouse_id: doc.warehouse_id, qty: l.qty, unit_cost_usd: unitUsd, cost_fixed: 1, kind: 'purchase', doc_id: doc.id, line_id: l.id, rev: doc.rev, user_id: userId });
           touched.add(p.id);
@@ -360,20 +423,40 @@ module.exports = (app) => {
         rate: doc.rate, usd_iqd: doc.usd_iqd,
       });
     }
-    // purchase extra cost not paid yet: owed to the supplier together with the goods
-    if (doc.type === 'purchase' && extra > 0 && !doc.extra_account_id && doc.partner_id) {
-      app.partners.addMove({
-        date: doc.date, partner_id: doc.partner_id, currency: doc.currency, amount: -extra, kind: 'purchase_extra', doc_id: doc.id,
-        description: `${doc.no} — extra cost`, due_date: doc.due_date, rev: doc.rev, user_id: userId, rate: doc.rate, usd_iqd: doc.usd_iqd,
-      });
-    }
-    // purchase extra cost paid from a cash/bank account
-    if (doc.type === 'purchase' && extra > 0 && doc.extra_account_id) {
-      const acc = app.cash.account(doc.extra_account_id);
-      const amt = app.convert(extra, doc.currency, acc.currency, { usd_iqd: doc.usd_iqd });
-      app.cash.addMove({ date: doc.date, account_id: acc.id, amount: -amt, kind: 'purchase_extra', doc_id: doc.id, description: `${doc.no} — extra cost`, user_id: userId, usd_iqd: doc.usd_iqd, rev: doc.rev });
+    // each cost of a purchase: paid from a cash/bank account, or owed to the account named on it (else the supplier)
+    for (const c of costs) {
+      if (!(c.amount > 0)) continue;
+      if (c.account_id) {
+        const acc = app.cash.account(c.account_id);
+        const amt = app.convert(c.amount, c.currency, acc.currency, { usd_iqd: doc.usd_iqd });
+        app.cash.addMove({ date: doc.date, account_id: acc.id, amount: -amt, kind: 'purchase_extra', doc_id: doc.id, description: costName(c), user_id: userId, usd_iqd: doc.usd_iqd, rev: doc.rev });
+      } else if (c.partner_id || doc.partner_id) {
+        app.partners.addMove({
+          date: doc.date, partner_id: c.partner_id || doc.partner_id, currency: c.currency, amount: -c.amount, kind: 'purchase_extra', doc_id: doc.id,
+          description: costName(c), due_date: doc.due_date, rev: doc.rev, user_id: userId, usd_iqd: doc.usd_iqd,
+        });
+      }
     }
     return touched;
+  }
+
+  /**
+   * How much of a purchase's costs (in USD) a line carries. Only goods (product lines) carry them: 'qty' puts the
+   * same amount on every unit; 'value' shares them by the lines' amounts (when nothing has a price, per unit).
+   */
+  function spreadCosts(doc, lines, costs) {
+    const fx = { usd_iqd: doc.usd_iqd };
+    const totalUsd = costs.reduce((s, c) => s + app.convert(c.amount, c.currency, 'USD', fx), 0);
+    const goods = lines.filter((l) => l.kind === 'product' && l.product_id && l.qty > 0);
+    const qtySum = goods.reduce((s, l) => s + l.qty, 0);
+    const valSum = goods.reduce((s, l) => s + Math.max(l.line_total, 0), 0);
+    const byQty = doc.cost_split === 'qty' || !(valSum > 0);
+    const carries = new Set(goods);
+    return (l) => {
+      if (!(totalUsd > 0) || !carries.has(l)) return 0;
+      if (byQty) return qtySum > 0 ? totalUsd * l.qty / qtySum : 0;
+      return totalUsd * Math.max(l.line_total, 0) / valSum;
+    };
   }
 
   function voidEffects(docId) {
@@ -471,6 +554,10 @@ module.exports = (app) => {
     }
     const totals = computeTotals(lines, data, currency);
     if (['transfer', 'adjust'].includes(type)) { totals.total = 0; totals.subtotal = 0; }
+    const costs = resolveCosts({ ...data, type }, existing, currency);
+    const extraTotal = app.money(costs.rows.reduce((s, c) => s + app.convert(c.amount, c.currency, currency, { usd_iqd: fx.usd_iqd }), 0), currency);
+    // costs are carried by the goods: an invoice of services only has nothing to put them on
+    if (costs.rows.length) U.assert(lines.some((l) => l.kind === 'product' && l.product_id && l.qty > 0), 'costs_need_goods', 'Costs are spread over the goods: add products to the invoice', 400);
 
     // returns: validate against the original document
     if (['sale_return', 'purchase_return'].includes(type) && data.ref_doc_id) {
@@ -537,7 +624,7 @@ module.exports = (app) => {
         warehouse_id: warehouseId, to_warehouse_id: data.to_warehouse_id || null,
         currency, rate: fx.rate, usd_iqd: fx.usd_iqd, price_list_id: data.price_list_id || (partner && partner.price_list_id) || null,
         subtotal: totals.subtotal, line_discount: totals.line_discount, discount: totals.discount,
-        extra_cost: type === 'purchase' ? U.num(data.extra_cost) : 0, extra_account_id: type === 'purchase' ? (data.extra_account_id || null) : null,
+        extra_cost: type === 'purchase' ? extraTotal : 0, extra_account_id: null, cost_split: costs.split,
         total: totals.total, total_usd: U.round(totals.total / fx.rate, 6),
         payment_method: U.str(data.payment_method, 20),
         vehicle_id: vehicleId, vehicle_plate: U.str(data.vehicle_plate, 30), vehicle_desc: U.str(data.vehicle_desc, 120), km: data.km ? Math.round(U.num(data.km)) : null,
@@ -582,6 +669,11 @@ module.exports = (app) => {
         U.assert(!ref, 'line_returned', `"${ol.description}" was returned in ${ref && ref.no}; it cannot be removed`, 400, { name: ol.description, no: ref && ref.no });
         db.run('UPDATE stock_moves SET line_id = NULL WHERE line_id = ?', [ol.id]);
         db.run('DELETE FROM doc_lines WHERE id = ?', [ol.id]);
+      }
+      // the purchase's costs, as sent (the effects below read them)
+      if (type === 'purchase') {
+        db.run('DELETE FROM doc_costs WHERE doc_id = ?', [id]);
+        costs.rows.forEach((c, i) => db.insert('doc_costs', { id: uuid('doc_costs'), doc_id: id, sort: i, ...c, created_at: now }));
       }
       for (const l of lines) {
         const lineRow = {
@@ -770,6 +862,7 @@ module.exports = (app) => {
     db.tx(() => {
       const lines = db.all('SELECT * FROM doc_lines WHERE doc_id = ?', [id]);
       db.run('DELETE FROM doc_lines WHERE doc_id = ?', [id]);
+      db.run('DELETE FROM doc_costs WHERE doc_id = ?', [id]);
       db.run('DELETE FROM docs WHERE id = ?', [id]);
       app.audit(ctx, 'delete_draft', 'doc', id, { k: 'doc', v: { type: d.type, no: d.no } }, { doc: d, lines });
     });
