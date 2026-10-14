@@ -100,6 +100,9 @@ module.exports = (app) => {
     const base = names[lang] || names.tr;
     return c.description ? `${base} — ${c.description}` : base;
   }
+  // the box an older screen shows for its single extra cost: that of one plain "other" cost in the invoice currency
+  const legacyAccount = (rows, currency) => (rows.length === 1 && rows[0].kind === 'other' && !rows[0].description && !rows[0].partner_id
+    && rows[0].currency === currency ? rows[0].account_id || null : null);
   // a cost as the history keeps it: what, how much, where it was paid from or who it is owed to
   const costAudit = (c) => ({ k: c.kind, d: c.description || undefined, a: c.amount, c: c.currency, acc: c.account_id || undefined, p: c.partner_id || undefined });
 
@@ -111,30 +114,39 @@ module.exports = (app) => {
    * `kept`: the same as a cost the invoice already has. Kept costs are not checked again, so an invoice from an
    * earlier version can still be saved with what that version allowed (e.g. a negative extra cost).
    * Older screens send one `extra_cost` in the invoice currency (paid from `extra_account_id` or owed to the
-   * supplier, spread by value): on an invoice without costs it becomes one "other" cost; on one with costs those
-   * stay as they are, and changing them there is refused.
+   * supplier, spread by value): it becomes one "other" cost, unless the invoice has costs such a screen cannot show
+   * (several, a description, another account or currency...): those stay as they are, and changing them there is
+   * refused.
    */
-  function resolveCosts(data, existing, currency, usdIqd) {
+  function resolveCosts(data, existing, currency, usdIqd, ctx) {
     if (data.type !== 'purchase') return { rows: [], split: null };
     const before = existing && existing.type === 'purchase' ? db.all('SELECT * FROM doc_costs WHERE doc_id = ? ORDER BY sort', [existing.id]) : [];
     let list = data.costs;
     let split = ['qty', 'value'].includes(data.cost_split) ? data.cost_split : null;
     if (!Array.isArray(list)) {
       const extra = U.num(data.extra_cost);
-      if (before.length) {
-        // an older screen converts the extra cost itself when the invoice's currency changes
-        const sameAccount = data.extra_account_id === undefined || (data.extra_account_id || null) === (existing.extra_account_id || null);
-        const untouched = existing.currency !== currency || (Math.abs(extra - U.num(existing.extra_cost)) < 1e-6 && sameAccount);
-        U.assert(untouched, 'costs_need_update', 'The costs of this invoice were entered with a newer version: update the program on this device', 409);
-        list = before;
-      } else list = extra ? [{ kind: 'other', amount: extra, currency, account_id: data.extra_account_id || null }] : [];
+      // an older screen converts the extra cost itself when the invoice's currency changes
+      const sameAccount = data.extra_account_id === undefined || (data.extra_account_id || null) === (existing ? existing.extra_account_id || null : null);
+      const untouched = existing && (existing.currency !== currency || (Math.abs(extra - U.num(existing.extra_cost)) < 1e-6 && sameAccount));
+      const plain = !before.length || (before.length === 1 && before[0].kind === 'other' && !before[0].description && !before[0].partner_id
+        && before[0].currency === existing.currency && (before[0].account_id || null) === (existing.extra_account_id || null));
+      if (before.length && untouched) list = before;
+      else {
+        U.assert(plain, 'costs_need_update', 'The costs of this invoice were entered with a newer version: update the program on this device', 409);
+        list = extra ? [{ kind: 'other', amount: extra, currency, account_id: data.extra_account_id || null }] : [];
+      }
       if (!split && list.length) split = (existing && existing.cost_split) || 'value';
     }
     if (!split) split = (existing && existing.cost_split) || 'qty';
     U.assert(list.length <= 30, 'too_many_costs', 'At most 30 costs on one invoice', 400);
-    const sig = (c) => [c.kind, c.currency, Number(c.amount), c.account_id || null, c.partner_id || null].join('|');
+    // the invoice's own costs, by what they are (amounts compared as the currency rounds them)
+    const sig = (kind, cur, amount, acc, partner) => [kind, cur, app.money(Number(amount) || 0, cur), acc || null, partner || null].join('|');
     const pool = new Map();
-    for (const c of before) pool.set(sig(c), (pool.get(sig(c)) || 0) + 1);
+    for (const c of before) {
+      const k = sig(c.kind, c.currency, c.amount, c.account_id, c.partner_id);
+      if (!pool.has(k)) pool.set(k, []);
+      pool.get(k).push(c);
+    }
     const rows = [];
     for (const c of list) {
       if (!c) continue;
@@ -148,12 +160,13 @@ module.exports = (app) => {
       const acc = accountId ? app.cash.account(accountId) : null;
       const partner = partnerId ? db.get('SELECT id, name, active, is_walkin FROM partners WHERE id = ?', [partnerId]) : null;
       U.assert(!partnerId || partner, 'partner_not_found', 'Account not found', 404);
-      const s = sig({ kind, currency: cur, amount, account_id: accountId, partner_id: partnerId });
-      const kept = (pool.get(s) || 0) > 0;
-      if (kept) pool.set(s, pool.get(s) - 1);
+      const match = (pool.get(sig(kind, cur, amount, accountId, partnerId)) || []).shift();
+      const kept = !!match;
+      if (kept) amount = match.amount; // exactly as it was
       else {
         U.assert(amount > 0, 'bad_cost', 'A cost cannot be negative', 400);
         if (acc) {
+          requirePerm(ctx, 'payments.pay');
           U.assert(acc.active, 'account_inactive', `Account "${acc.name}" is closed`, 400, { name: acc.name });
           if (acc.currency !== cur) {
             amount = app.money(app.convert(amount, cur, acc.currency, { usd_iqd: usdIqd }), acc.currency);
@@ -585,10 +598,13 @@ module.exports = (app) => {
     }
     const totals = computeTotals(lines, data, currency);
     if (['transfer', 'adjust'].includes(type)) { totals.total = 0; totals.subtotal = 0; }
-    const costs = resolveCosts({ ...data, type }, existing, currency, fx.usd_iqd);
+    const costs = resolveCosts({ ...data, type }, existing, currency, fx.usd_iqd, ctx);
     const extraTotal = app.money(costs.rows.reduce((s, c) => s + app.convert(c.amount, c.currency, currency, { usd_iqd: fx.usd_iqd }), 0), currency);
-    // costs are carried by the goods: a new cost needs products on the invoice (an older invoice keeps its own)
-    if (costs.rows.some((c) => !c.kept)) U.assert(lines.some((l) => l.kind === 'product' && l.product_id && l.qty > 0), 'costs_need_goods', 'Costs are spread over the goods: add products to the invoice', 400);
+    // costs are carried by the goods: an invoice keeps costs without goods only as an earlier version left it
+    if (costs.rows.length && !lines.some((l) => l.kind === 'product' && l.product_id && l.qty > 0)) {
+      const hadGoods = existing && db.get("SELECT 1 FROM doc_lines WHERE doc_id = ? AND kind = 'product' AND product_id IS NOT NULL AND qty > 0 LIMIT 1", [existing.id]);
+      U.assert(!hadGoods && costs.rows.every((c) => c.kept), 'costs_need_goods', 'Costs are spread over the goods: add products to the invoice', 400);
+    }
 
     // returns: validate against the original document
     if (['sale_return', 'purchase_return'].includes(type) && data.ref_doc_id) {
@@ -655,7 +671,7 @@ module.exports = (app) => {
         warehouse_id: warehouseId, to_warehouse_id: data.to_warehouse_id || null,
         currency, rate: fx.rate, usd_iqd: fx.usd_iqd, price_list_id: data.price_list_id || (partner && partner.price_list_id) || null,
         subtotal: totals.subtotal, line_discount: totals.line_discount, discount: totals.discount,
-        extra_cost: type === 'purchase' ? extraTotal : 0, extra_account_id: null, cost_split: costs.split,
+        extra_cost: type === 'purchase' ? extraTotal : 0, extra_account_id: legacyAccount(costs.rows, currency), cost_split: costs.split,
         total: totals.total, total_usd: U.round(totals.total / fx.rate, 6),
         payment_method: U.str(data.payment_method, 20),
         vehicle_id: vehicleId, vehicle_plate: U.str(data.vehicle_plate, 30), vehicle_desc: U.str(data.vehicle_desc, 120), km: data.km ? Math.round(U.num(data.km)) : null,
@@ -913,7 +929,7 @@ module.exports = (app) => {
       max_qty: targetType.endsWith('_return') ? U.round(l.qty - (l.returned_qty || 0), 4) : undefined,
       unit: l.unit, unit_price: targetType.endsWith('_return') && l.qty ? U.round(l.line_total / l.qty * (s.total && (s.total + s.discount) ? s.total / (s.total + s.discount) : 1), 6) : l.unit_price,
       discount: targetType.endsWith('_return') ? 0 : l.discount, discount_pct: targetType.endsWith('_return') ? null : l.discount_pct,
-      staff_id: l.staff_id, ref_line_id: targetType.endsWith('_return') ? l.id : null, note: l.note,
+      staff_id: l.staff_id, ref_line_id: targetType.endsWith('_return') ? l.id : null, note: l.note, track_stock: l.track_stock,
     }));
     return {
       type: targetType, ref_doc_id: s.id, ref_no: s.no, partner_id: s.partner_id, partner_name: s.partner_name, currency: s.currency, usd_iqd: s.usd_iqd,

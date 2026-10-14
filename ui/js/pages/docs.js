@@ -992,10 +992,14 @@ function CostsPanel({ d, set, cc, phone }) {
     { value: 'partner', label: t('doc.cost_pay_partner') },
     ...accounts.filter((a) => (mayPay && a.active) || c.pay === `acc:${a.id}`).map((a) => ({ value: `acc:${a.id}`, label: t('doc.cost_pay_account', { name: accountLabel(a) }) })),
   ];
-  // a cost paid from an account is in that account's currency: what left the box does not change with the rate
+  // a cost paid from an account is in that account's currency (what left the box does not change with the rate):
+  // the amount typed goes into it at the invoice's rate
   const changePay = (c, v) => {
     const a = v.startsWith('acc:') ? account(v.slice(4)) : null;
-    setCost(c.key, a ? { pay: v, currency: a.currency } : { pay: v });
+    if (!a || a.currency === c.currency) { setCost(c.key, { pay: v }); return; }
+    const amount = Number(c.amount) ? round(convert(Number(c.amount), c.currency, a.currency, d.usd_iqd), decimals(a.currency)) : c.amount;
+    setCost(c.key, { pay: v, currency: a.currency, amount });
+    if (Number(c.amount)) toast(t('doc.cost_converted', { from: money(Number(c.amount), c.currency), to: money(amount, a.currency) }));
   };
   // so another currency moves it to that currency's cash box (with none, to the supplier's balance)
   const changeCurrency = (c, v) => {

@@ -747,6 +747,7 @@ export default {
   'doc.cost_will_pay_from': '{name} hesabından ödenecek',
   'doc.cost_will_owe_to': '{name} hesabına yazılacak',
   'doc.cost_untracked_note': 'Stok takibi yapılmayan ürünlere masraf eklenmez.',
+  'doc.cost_converted': 'Tutar kasanın para birimine çevrildi: {from} = {to}',
   'err.costs_need_update': 'Bu faturanın masrafları programın yeni sürümüyle girildi. Bu cihazda programı güncelleyin (sayfayı yenileyin) ve tekrar deneyin.',
   'err.bad_cost_partner': '"{name}" hesabına masraf yazılamaz (pasif cari ya da perakende müşteri).',
 };

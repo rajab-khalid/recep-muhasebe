@@ -747,6 +747,7 @@ export default {
   'doc.cost_will_pay_from': 'To be paid from {name}',
   'doc.cost_will_owe_to': 'To be added to the balance of {name}',
   'doc.cost_untracked_note': 'Products whose stock is not tracked get no share of the costs.',
+  'doc.cost_converted': 'The amount was converted to the box’s currency: {from} = {to}',
   'err.costs_need_update': 'The costs of this invoice were entered with a newer version of the program. Update the program on this device (reload the page) and try again.',
   'err.bad_cost_partner': 'A cost cannot be added to "{name}" (an inactive account or the walk-in customer).',
 };

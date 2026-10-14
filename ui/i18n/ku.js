@@ -747,6 +747,7 @@ export default {
   'doc.cost_will_pay_from': 'Dê ji {name} bê dayîn',
   'doc.cost_will_owe_to': 'Dê li ser hesabê {name} bê nivîsandin',
   'doc.cost_untracked_note': 'Para mesrefan naçe ser materyalên ku embara wan nayê şopandin.',
+  'doc.cost_converted': 'Mîqdar bi dirava kasayê hate guhertin: {from} = {to}',
   'err.costs_need_update': 'Mesrefên vê faturayê bi guhertoyeke nûtir a bernameyê hatine nivîsandin. Li ser vê amûrê bernameyê nû bike (rûpelê nû bike) û dîsa biceribîne.',
   'err.bad_cost_partner': 'Mesref nikare li ser hesabê "{name}" bê nivîsandin (hesabekî neçalak an Kirriyarê Kaş).',
 };

@@ -301,3 +301,49 @@ test('costs go only to open accounts; an account named on costs is closed, not d
   const del = JSON.parse(app.db.val("SELECT data FROM audit_log WHERE entity_id = ? AND action = 'delete_draft'", [r2.id]));
   assert.deepEqual(del.costs.map((c) => [c.k, c.a]), [['other', 9]]);
 });
+
+test('a purchase keeps its costs only with goods; old odd amounts stay as they were; paying needs the right to pay', () => {
+  const t = shop('holes');
+  const { app, ctx } = t;
+  // goods removed later: the costs would be carried by nothing
+  const r = t.buy({ cost_split: 'qty', costs: [{ kind: 'freight', amount: 10000, currency: 'IQD', account_id: t.cashIqd.id }] });
+  const d = app.docs.get(r.id);
+  assert.equal(code(() => app.docs.save({ ...d, id: r.id, costs: d.costs, post: true, lines: [{ kind: 'labor', description: 'Montaj', qty: 1, unit_price: 5000 }] }, ctx)), 'costs_need_goods');
+  // amounts an earlier version kept with more decimals than the currency has: still the same costs, unchanged
+  const o = t.buy({});
+  app.db.run("INSERT INTO doc_costs (id, doc_id, sort, kind, currency, amount, created_at) VALUES ('c-frac', ?, 0, 'other', 'IQD', -3000.5, '2026-10-01T10:00:00Z')", [o.id]);
+  app.db.run("UPDATE docs SET extra_cost = -3000.5, cost_split = 'value' WHERE id = ?", [o.id]);
+  const od = app.docs.get(o.id);
+  app.docs.save({ ...od, id: o.id, lines: od.lines, costs: od.costs, post: true }, ctx);
+  assert.deepEqual(costsOf(app, o.id).map((c) => c.amount), [-3000.5]);
+  // someone who may not pay out money: a cost owed to the supplier is fine, one paid from the box is not
+  const depo = app.users.save({ full_name: 'Depo', username: 'depo', role_id: app.db.val("SELECT id FROM roles WHERE code = 'warehouse'"), pin: '2468' }, ctx);
+  const wctx = { user: app.users.get(depo), ip: '127.0.0.1' };
+  const line = [{ product_id: t.cloth, qty: 1, unit_price: 1000 }];
+  assert.equal(code(() => app.docs.save({ type: 'purchase', partner_id: t.supplier, currency: 'IQD', post: true, lines: line, costs: [{ kind: 'customs', amount: 700, currency: 'IQD', account_id: t.cashIqd.id }] }, wctx)), 'forbidden');
+  const w = app.docs.save({ type: 'purchase', partner_id: t.supplier, currency: 'IQD', post: true, lines: line, costs: [{ kind: 'customs', amount: 700, currency: 'IQD' }] }, wctx);
+  assert.equal(costsOf(app, w.id).length, 1);
+  // a purchase made from an order knows which products are kept in stock (the editor spreads the costs by it)
+  const loose = app.products.save({ name: 'Dökme şampuan', currency: 'IQD', track_stock: 0 }, ctx);
+  const po = app.docs.save({ type: 'purchase_order', partner_id: t.supplier, currency: 'IQD', lines: [{ product_id: t.cloth, qty: 2, unit_price: 1000 }, { product_id: loose, qty: 2, unit_price: 1000 }] }, ctx);
+  const draft = app.docs.draftFrom(po.id, 'purchase');
+  assert.deepEqual(draft.lines.map((l) => l.track_stock), [1, 0]);
+});
+
+test('an older screen may still change the one plain extra cost it knows', () => {
+  const t = shop('plain');
+  const { app, ctx } = t;
+  // entered there, or with this version as one "other" cost paid from the IQD box: the older screen shows that box
+  const r = t.buy({ cost_split: 'value', costs: [{ kind: 'other', amount: 9000, currency: 'IQD', account_id: t.cashIqd.id }] });
+  assert.equal(app.db.val('SELECT extra_account_id FROM docs WHERE id = ?', [r.id]), t.cashIqd.id);
+  const d = app.docs.get(r.id);
+  app.docs.save({ ...d, id: r.id, lines: d.lines, costs: undefined, extra_cost: 12000, extra_account_id: t.cashIqd.id, post: true }, ctx);
+  assert.deepEqual(costsOf(app, r.id).map((c) => [c.kind, c.amount, c.account_id]), [['other', 12000, t.cashIqd.id]]);
+  assert.equal(app.cash.balance(t.cashIqd.id), -12000);
+  // one paid from a box of another currency is not what that screen shows: it may not change it
+  const usd = app.cash.defaultAccount('USD');
+  const r2 = t.buy({ costs: [{ kind: 'other', amount: 3000, currency: 'IQD', account_id: usd.id }] });
+  assert.equal(app.db.val('SELECT extra_account_id FROM docs WHERE id = ?', [r2.id]), null);
+  const d2 = app.docs.get(r2.id);
+  assert.equal(code(() => app.docs.save({ ...d2, id: r2.id, lines: d2.lines, costs: undefined, extra_cost: 4000, extra_account_id: null, post: true }, ctx)), 'costs_need_update');
+});
